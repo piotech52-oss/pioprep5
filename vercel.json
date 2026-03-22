@@ -1,0 +1,87 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "index.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "*.html",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/admin/(.*)",
+      "dest": "index.js"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "index.js"
+    },
+    {
+      "src": "/verifycode/(.*)",
+      "dest": "index.js"
+    },
+    {
+      "src": "/payment",
+      "dest": "index.js"
+    },
+    {
+      "src": "/send",
+      "dest": "index.js"
+    },
+    {
+      "src": "/verify-code",
+      "dest": "index.js"
+    },
+    {
+      "src": "/",
+      "dest": "/index.html"
+    },
+    {
+      "src": "/home.html",
+      "dest": "/index.html"
+    },
+    {
+      "src": "/active1",
+      "dest": "/active1.html"
+    },
+    {
+      "src": "/active1.html",
+      "dest": "/active1.html"
+    },
+    {
+      "src": "/active3",
+      "dest": "/active3.html"
+    },
+    {
+      "src": "/active3.html",
+      "dest": "/active3.html"
+    },
+    {
+      "src": "/homeforall",
+      "dest": "/homeforall.html"
+    },
+    {
+      "src": "/homeforall.html",
+      "dest": "/homeforall.html"
+    },
+    {
+      "src": "/login",
+      "dest": "/login.html"
+    },
+    {
+      "src": "/login.html",
+      "dest": "/login.html"
+    },
+    {
+      "src": "/(.*)\\.(css|js|png|jpg|jpeg|gif|svg|ico|json|webp)",
+      "dest": "/$1.$2"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "index.js"
+    }
+  ]
+}

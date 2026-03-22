@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PIO Prep - Authentication</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+<script>
+    tailwind.config = {
+        darkMode: "class",
+        theme: {
+            extend: {
+                colors: {
+                    "primary": "#135bec",
+                    "background-light": "#f6f6f8",
+                    "background-dark": "#101622",
+                },
+                fontFamily: {
+                    "display": ["Lexend", "sans-serif"]
+                },
+                borderRadius: {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+                },
+            },
+        },
+    }
+</script>
+<style>
+    .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        font-size: 20px;
+    }
+    
+    .form-container {
+        display: grid;
+        grid-template-columns: 1fr;
+        grid-template-rows: auto;
+        transition: height 350ms ease-in-out;
+    }
+    
+    .form-wrapper {
+        grid-column: 1 / -1;
+        grid-row: 1 / -1;
+        transition: opacity 350ms ease-in-out, transform 350ms ease-in-out;
+    }
+    
+    #auth-container:has(input[value="create"]:checked) #create-form,
+    #auth-container:has(input[value="login"]:checked) #login-form {
+        opacity: 1;
+        transform: translateX(0);
+        pointer-events: auto;
+        position: relative;
+    }
+    
+    #auth-container:has(input[value="create"]:checked) #login-form {
+        opacity: 0;
+        transform: translateX(20px);
+        pointer-events: none;
+        position: absolute;
+    }
+    
+    #auth-container:has(input[value="login"]:checked) #create-form {
+        opacity: 0;
+        transform: translateX(-20px);
+        pointer-events: none;
+        position: absolute;
+    }
+    
+    /* Loading spinner */
+    .spinner {
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top: 3px solid white;
+        width: 20px;
+        height: 20px;
+        animation: spin 1s linear infinite;
+        display: none;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    .error-message {
+        color: #dc2626;
+        font-size: 0.875rem;
+        margin-top: 0.25rem;
+        display: none;
+    }
+    
+    .success-message {
+        color: #16a34a;
+        font-size: 0.875rem;
+        margin-top: 0.25rem;
+        display: none;
+    }
+</style>
+</head>
+<body class="font-display bg-background-light dark:bg-background-dark antialiased">
+<div class="relative flex min-h-screen w-full flex-col group/design-root overflow-x-hidden">
+    <div class="layout-container flex h-full grow flex-col">
+        <header class="absolute top-0 left-0 right-0 z-10 p-4 sm:px-6 lg:px-8">
+            <div class="flex items-center gap-4 text-gray-800 dark:text-white">
+                <div class="size-6">
+                    <svg fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                        <path clip-rule="evenodd" d="M24 18.4228L42 11.475V34.3663C42 34.7796 41.7457 35.1504 41.3601 35.2992L24 42V18.4228Z" fill="currentColor" fill-rule="evenodd"></path>
+                        <path clip-rule="evenodd" d="M24 8.18819L33.4123 11.574L24 15.2071L14.5877 11.574L24 8.18819ZM9 15.849L21 20.4808V37.6266L9 32.9948V15.849ZM27 37.6266V20.4808L39 15.849V32.9948L27 37.6266ZM25.354 2.29885C24.4788 1.98402 23.5212 1.98402 22.646 2.29885L4.98454 8.65208C3.7939 9.08038 3 10.2097 3 11.475V34.3663C3 36.0196 4.01719 37.5026 5.55962 38.098L22.9197 44.7987C23.6149 45.0671 24.3851 45.0671 25.0803 44.7987L42.4404 38.098C43.9828 37.5026 45 36.0196 45 34.3663V11.475C45 10.2097 44.2061 9.08038 43.0155 8.65208L25.354 2.29885Z" fill="currentColor" fill-rule="evenodd"></path>
+                    </svg>
+                </div>
+                <h2 class="text-xl font-bold tracking-tight">PIO Prep</h2>
+            </div>
+        </header>
+        
+        <main class="flex flex-1 items-center justify-center p-4">
+            <div class="grid w-full max-w-6xl grid-cols-1 overflow-hidden rounded-xl bg-white shadow-xl dark:bg-background-dark/50 md:grid-cols-2">
+                <div class="relative hidden flex-col justify-center bg-gray-100 p-12 dark:bg-background-dark/20 md:flex">
+                    <div class="absolute inset-0 bg-primary/20"></div>
+                    <img class="absolute inset-0 h-full w-full object-cover opacity-30 mix-blend-multiply" data-alt="Students studying together in a library" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBjB8EZ8biqQYoBOmk5-OJbdTM38rw6vTVpXFJAjMi9tdnUAExMshqPWvAEuHPs85cV85RGCZXbZV1p2roysxcKIoDWnPMUS3fnJPe27Md3sGf9FS--KeSTdS0HHHe2MNvukbKMBAiSAmucieydcSYAhoAl328B3ECG7ZVoS_2gAdXC3N9ozWQXD3w7lvCFIat7gBl5ncgGF7YqowCafD93mCRLH57o0gmS_NT4ZNaOwKK9lo7SN2VfsQS1RMAZKlSMFIqMNOTzE5s"/>
+                    <div class="relative z-10">
+                        <h1 class="text-4xl font-bold tracking-tight text-gray-900 dark:text-white">Your Path to Success Starts Here</h1>
+                        <p class="mt-4 text-lg text-gray-700 dark:text-gray-300">Join thousands of students preparing to ace their JAMB exams with our comprehensive study tools and past questions.</p>
+                    </div>
+                </div>
+
+                <div class="flex flex-col justify-center p-6 sm:p-10">
+                    <div class="mx-auto w-full max-w-sm" id="auth-container">
+                        <h1 class="text-center text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Welcome!</h1>
+                        <p class="mt-2 text-center text-gray-600 dark:text-gray-400">Log in or create an account to begin.</p>
+                        
+                        <!-- Messages display area -->
+                        <div id="message-area" class="mt-4"></div>
+                        
+                        <div class="mt-8">
+                            <div class="flex rounded-lg bg-background-light p-1 dark:bg-background-dark">
+                                <label class="flex flex-1 cursor-pointer items-center justify-center rounded-lg px-2 py-2 text-sm font-medium transition-colors has-[:checked]:bg-white has-[:checked]:text-gray-900 has-[:checked]:shadow-sm text-gray-500 dark:has-[:checked]:bg-background-dark/50 dark:has-[:checked]:text-white dark:text-gray-400">
+                                    <span>Create Account</span>
+                                    <input checked="" class="sr-only" name="auth-tab" type="radio" value="create"/>
+                                </label>
+                                <label class="flex flex-1 cursor-pointer items-center justify-center rounded-lg px-2 py-2 text-sm font-medium transition-colors has-[:checked]:bg-white has-[:checked]:text-gray-900 has-[:checked]:shadow-sm text-gray-500 dark:has-[:checked]:bg-background-dark/50 dark:has-[:checked]:text-white dark:text-gray-400">
+                                    <span>Log In</span>
+                                    <input class="sr-only" name="auth-tab" type="radio" value="login"/>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="form-container mt-6">
+                            <!-- Registration Form -->
+                            <form class="space-y-4 form-wrapper" id="create-form">
+                                <div>
+                                    <label class="flex flex-col">
+                                        <p class="pb-2 text-sm font-medium text-gray-800 dark:text-gray-200">Username</p>
+                                        <input name="userName" id="register-username" class="form-input flex h-12 w-full resize-none rounded-lg border border-gray-300 bg-transparent p-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-gray-600 dark:text-white dark:placeholder:text-gray-500" placeholder="Choose a username" required/>
+                                    </label>
+                                    <div id="username-error" class="error-message"></div>
+                                </div>
+                                
+                                <div>
+                                    <label class="flex flex-col">
+                                        <p class="pb-2 text-sm font-medium text-gray-800 dark:text-gray-200">Email Address</p>
+                                        <input name="email" id="register-email" class="form-input flex h-12 w-full resize-none rounded-lg border border-gray-300 bg-transparent p-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-gray-600 dark:text-white dark:placeholder:text-gray-500" placeholder="your.email@example.com" type="email" required/>
+                                    </label>
+                                    <div id="email-error" class="error-message"></div>
+                                </div>
+                                
+                                <div class="relative">
+                                    <label class="flex flex-col">
+                                        <p class="pb-2 text-sm font-medium text-gray-800 dark:text-gray-200">Password</p>
+                                        <input name="password" id="register-password" class="form-input flex h-12 w-full resize-none rounded-lg border border-gray-300 bg-transparent p-3 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-gray-600 dark:text-white dark:placeholder:text-gray-500" placeholder="Create a strong password" type="password" required/>
+                                    </label>
+                                    <button type="button" class="absolute right-3 top-[38px] text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" onclick="togglePassword('register-password', this)">
+                                        <span class="material-symbols-outlined">visibility_off</span>
+                                    </button>
+                                    <div id="password-error" class="error-message"></div>
+                                </div>
+                                
+                                <button type="submit" class="flex h-12 w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-base font-semibold text-white transition-colors hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 dark:focus:ring-offset-background-dark" id="register-button">
+                                    <span id="register-text">Create My Account</span>
+                                    <div class="spinner" id="register-spinner"></div>
+                                </button>
+                                
+                                <p class="pt-2 text-center text-xs text-gray-500 dark:text-gray-400">
+                                    By creating an account, you agree to our<br/>
+                                    <a class="font-medium text-primary hover:underline" href="#">Terms of Service</a> and 
+                                    <a class="font-medium text-primary hover:underline" href="#">Privacy Policy</a>.
+                                </p>
+                            </form>
+
+                            <!-- Login Form -->
+                            <form class="space-y-4 form-wrapper" id="login-form">
+                                <div>
+                                    <label class="flex flex-col">
+                                        <p class="pb-2 text-sm font-medium text-gray-800 dark:text-gray-200">Email</p>
+                                        <input name="email" id="login-email" class="form-input flex h-12 w-full resize-none rounded-lg border border-gray-300 bg-transparent p-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-gray-600 dark:text-white dark:placeholder:text-gray-500" placeholder="your.email@example.com" type="email" required/>
+                                    </label>
+                                    <div id="login-email-error" class="error-message"></div>
+                                </div>
+                                
+                                <div class="relative">
+                                    <label class="flex flex-col">
+                                        <div class="flex items-center justify-between pb-2">
+                                            <p class="text-sm font-medium text-gray-800 dark:text-gray-200">Password</p>
+                                            <a class="text-sm font-medium text-primary hover:underline" href="#" id="forgot-password">Forgot?</a>
+                                        </div>
+                                        <input name="password" id="login-password" class="form-input flex h-12 w-full resize-none rounded-lg border border-gray-300 bg-transparent p-3 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-gray-600 dark:text-white dark:placeholder:text-gray-500" placeholder="Enter your password" type="password" required/>
+                                    </label>
+                                    <button type="button" class="absolute right-3 top-[46px] text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" onclick="togglePassword('login-password', this)">
+                                        <span class="material-symbols-outlined">visibility_off</span>
+                                    </button>
+                                    <div id="login-password-error" class="error-message"></div>
+                                </div>
+                                
+                                <button type="submit" class="flex h-12 w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-base font-semibold text-white transition-colors hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 dark:focus:ring-offset-background-dark" id="login-button">
+                                    <span id="login-text">Log In</span>
+                                    <div class="spinner" id="login-spinner"></div>
+                                </button>
+                            </form>
+                        </div>
+                        
+                        <div class="relative my-6">
+                            <div class="absolute inset-0 flex items-center">
+                                <div class="w-full border-t border-gray-300 dark:border-gray-600"></div>
+                            </div>
+                            <div class="relative flex justify-center text-sm">
+                                <span class="bg-white px-2 text-gray-500 dark:bg-gray-800 dark:text-gray-400">Or continue with</span>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <button class="flex h-12 w-full items-center justify-center gap-3 rounded-lg border border-gray-300 bg-white px-4 py-2 text-base font-semibold text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400/50 focus:ring-offset-2 dark:border-gray-600 dark:bg-background-dark/50 dark:text-gray-200 dark:hover:bg-background-dark dark:focus:ring-offset-background-dark" type="button">
+                                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M22.5777 12.2618C22.5777 11.4545 22.5085 10.669 22.3853 9.90909H12.2273V14.2618H18.1091C17.8428 15.7727 17.0182 17.0727 15.7591 17.9181V20.5909H19.5318C21.5364 18.7818 22.5777 15.8 22.5777 12.2618Z" fill="#4285F4"></path>
+                                    <path d="M12.2273 23C15.2227 23 17.75 22.0182 19.5318 20.5909L15.7591 17.9181C14.7591 18.6 13.5818 19.0454 12.2273 19.0454C9.6 19.0454 7.36364 17.2818 6.55909 14.9591H2.67273V17.7272C4.44545 20.8363 8.01818 23 12.2273 23Z" fill="#34A853"></path>
+                                    <path d="M6.55905 14.9591C6.34541 14.3318 6.22268 13.6682 6.22268 13C6.22268 12.3318 6.34541 11.6682 6.55905 11.0409V8.27273H2.67268C1.9636 9.68182 1.5545 11.2864 1.5545 13C1.5545 14.7136 1.9636 16.3182 2.67268 17.7273L6.55905 14.9591Z" fill="#FBBC05"></path>
+                                    <path d="M12.2273 6.95455C13.6818 6.95455 14.9 7.45455 15.8682 8.36364L19.6091 4.78182C17.7409 3.09545 15.2227 2 12.2273 2C8.01818 2 4.44545 4.16364 2.67273 7.27273L6.55909 10.0409C7.36364 7.71818 9.6 5.95455 12.2273 5.95455" fill="#EA4335"></path>
+                                </svg>
+                                <span class="text-sm">Google</span>
+                            </button>
+                            <button class="flex h-12 w-full items-center justify-center gap-3 rounded-lg border border-gray-300 bg-white px-4 py-2 text-base font-semibold text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400/50 focus:ring-offset-2 dark:border-gray-600 dark:bg-background-dark/50 dark:text-gray-200 dark:hover:bg-background-dark dark:focus:ring-offset-background-dark" type="button">
+                                <svg class="h-5 w-5" fill="#1877F2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M22 12c0-5.52-4.48-10-10-10S2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15H8v-3h2V9.5C10 7.57 11.57 6 13.5 6H16v3h-1.5c-1 0-1.5.5-1.5 1.5V12h3l-.5 3h-2.5v6.8c4.56-.93 8-4.96 8-9.8z"></path>
+                                </svg>
+                                <span class="text-sm">Facebook</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script>
+    // ======================
+    // UTILITY FUNCTIONS
+    // ======================
+    
+    function showMessage(message, type = 'error') {
+        const messageArea = document.getElementById('message-area');
+        messageArea.innerHTML = `
+            <div class="p-3 rounded-lg ${type === 'error' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}">
+                ${message}
+            </div>
+        `;
+        messageArea.style.display = 'block';
+        
+        // Auto-hide success messages after 5 seconds
+        if (type === 'success') {
+            setTimeout(() => {
+                messageArea.style.display = 'none';
+            }, 5000);
+        }
+    }
+    
+    function showError(fieldId, message) {
+        const errorElement = document.getElementById(`${fieldId}-error`);
+        if (errorElement) {
+            errorElement.textContent = message;
+            errorElement.style.display = 'block';
+        }
+    }
+    
+    function clearErrors() {
+        const errorElements = document.querySelectorAll('.error-message');
+        errorElements.forEach(el => {
+            el.style.display = 'none';
+            el.textContent = '';
+        });
+        document.getElementById('message-area').style.display = 'none';
+    }
+    
+    function toggleLoading(buttonId, show) {
+        const button = document.getElementById(buttonId);
+        const textId = buttonId === 'register-button' ? 'register-text' : 'login-text';
+        const spinnerId = buttonId === 'register-button' ? 'register-spinner' : 'login-spinner';
+        
+        const text = document.getElementById(textId);
+        const spinner = document.getElementById(spinnerId);
+        
+        if (show) {
+            button.disabled = true;
+            text.style.display = 'none';
+            spinner.style.display = 'inline-block';
+        } else {
+            button.disabled = false;
+            text.style.display = 'inline-block';
+            spinner.style.display = 'none';
+        }
+    }
+    
+    function togglePassword(inputId, button) {
+        const input = document.getElementById(inputId);
+        const icon = button.querySelector('.material-symbols-outlined');
+        
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.textContent = 'visibility';
+        } else {
+            input.type = 'password';
+            icon.textContent = 'visibility_off';
+        }
+    }
+    
+    // ======================
+    // FORM VALIDATION
+    // ======================
+    
+    function validateEmail(email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+    }
+    
+    function validatePassword(password) {
+        return password.length >= 6;
+    }
+    
+    // ======================
+    // API FUNCTIONS
+    // ======================
+    
+    async function registerUser(userData) {
+        try {
+            const response = await fetch('/api/register', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(userData)
+            });
+            
+            return await response.json();
+        } catch (error) {
+            console.error('Registration error:', error);
+            return { error: 'Network error. Please try again.' };
+        }
+    }
+    
+    async function loginUser(credentials) {
+        try {
+            const response = await fetch('/api/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include', // Important for sessions
+                body: JSON.stringify(credentials)
+            });
+            
+            return await response.json();
+        } catch (error) {
+            console.error('Login error:', error);
+            return { error: 'Network error. Please try again.' };
+        }
+    }
+    
+    async function checkSession() {
+        try {
+            const response = await fetch('/api/session', {
+                credentials: 'include'
+            });
+            return await response.json();
+        } catch (error) {
+            console.error('Session check error:', error);
+            return { loggedIn: false };
+        }
+    }
+    
+    // ======================
+    // EVENT HANDLERS
+    // ======================
+    
+    document.getElementById('create-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        clearErrors();
+        
+        const userName = document.getElementById('register-username').value.trim();
+        const email = document.getElementById('register-email').value.trim();
+        const password = document.getElementById('register-password').value;
+        
+        // Validation
+        let isValid = true;
+        
+        if (!userName) {
+            showError('username', 'Username is required');
+            isValid = false;
+        }
+        
+        if (!email) {
+            showError('email', 'Email is required');
+            isValid = false;
+        } else if (!validateEmail(email)) {
+            showError('email', 'Please enter a valid email address');
+            isValid = false;
+        }
+        
+        if (!password) {
+            showError('password', 'Password is required');
+            isValid = false;
+        } else if (!validatePassword(password)) {
+            showError('password', 'Password must be at least 6 characters');
+            isValid = false;
+        }
+        
+        if (!isValid) return;
+        
+        // Show loading state
+        toggleLoading('register-button', true);
+        
+        // Send registration request
+        const result = await registerUser({ userName, email, password });
+        
+        // Hide loading state
+        toggleLoading('register-button', false);
+        
+        if (result.success) {
+            showMessage(result.message, 'success');
+            
+            // Clear form
+            document.getElementById('create-form').reset();
+            
+            // Switch to login tab after successful registration
+            setTimeout(() => {
+                document.querySelector('input[name="auth-tab"][value="login"]').checked = true;
+                updateFormContainerHeight();
+                showMessage('Please login with your new account', 'success');
+            }, 2000);
+        } else {
+            showMessage(result.error || 'Registration failed', 'error');
+        }
+    });
+    
+    document.getElementById('login-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        clearErrors();
+        
+        const email = document.getElementById('login-email').value.trim();
+        const password = document.getElementById('login-password').value;
+        
+        // Validation
+        let isValid = true;
+        
+        if (!email) {
+            showError('login-email', 'Email is required');
+            isValid = false;
+        } else if (!validateEmail(email)) {
+            showError('login-email', 'Please enter a valid email address');
+            isValid = false;
+        }
+        
+        if (!password) {
+            showError('login-password', 'Password is required');
+            isValid = false;
+        }
+        
+        if (!isValid) return;
+        
+        // Show loading state
+        toggleLoading('login-button', true);
+        
+        // Send login request
+        const result = await loginUser({ email, password });
+        
+        // Hide loading state
+        toggleLoading('login-button', false);
+        
+        if (result.success) {
+            showMessage(result.message, 'success');
+            
+            // Redirect based on activation status
+            setTimeout(() => {
+                if (result.user.is_activated) {
+                    window.location.href = '/home.html';
+                } else {
+                    window.location.href = '/homeforall.html';
+                }
+            }, 1500);
+        } else {
+            showMessage(result.error || 'Login failed', 'error');
+        }
+    });
+    
+    // ======================
+    // INITIALIZATION
+    // ======================
+    
+    document.addEventListener('DOMContentLoaded', async function() {
+        // Check if user is already logged in
+        const session = await checkSession();
+        if (session.loggedIn) {
+            if (session.user.is_activated) {
+                window.location.href = '/home.html';
+            } else {
+                window.location.href = '/homeforall.html';
+            }
+        }
+        
+        // Add forgot password handler
+        document.getElementById('forgot-password').addEventListener('click', function(e) {
+            e.preventDefault();
+            showMessage('Please contact support to reset your password', 'error');
+        });
+        
+        // Initialize form height management
+        const authContainer = document.getElementById('auth-container');
+        const formContainer = authContainer.querySelector('.form-container');
+        const createForm = document.getElementById('create-form');
+        const loginForm = document.getElementById('login-form');
+        const radioButtons = authContainer.querySelectorAll('input[name="auth-tab"]');
+        
+        function updateFormContainerHeight() {
+            const selectedRadio = authContainer.querySelector('input[name="auth-tab"]:checked');
+            if (selectedRadio.value === 'create') {
+                formContainer.style.height = `${createForm.scrollHeight}px`;
+            } else {
+                formContainer.style.height = `${loginForm.scrollHeight}px`;
+            }
+        }
+        
+        radioButtons.forEach(radio => {
+            radio.addEventListener('change', updateFormContainerHeight);
+        });
+        
+        // Set initial height
+        window.addEventListener('load', updateFormContainerHeight);
+        window.addEventListener('resize', updateFormContainerHeight);
+        
+        // Initialize form height
+        updateFormContainerHeight();
+    });
+</script>
+</body>
+</html>

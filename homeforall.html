@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>PIO Prep Dashboard</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com" rel="preconnect"/>
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@100..900&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#135bec",
+                        "primary-hover": "#0e4ad1",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#101622",
+                    },
+                    fontFamily: {
+                        "display": ["Lexend", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Lexend', sans-serif;
+        }
+        .btn-hover-effect {
+            transition: all 0.3s ease;
+        }
+        .btn-hover-effect:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(19, 91, 236, 0.2);
+        }
+        .logout-btn-hover {
+            transition: all 0.3s ease;
+        }
+        .logout-btn-hover:hover {
+            background-color: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            border-color: #ef4444;
+        }
+        @media (max-width: 640px) {
+            .btn-mobile-full {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark">
+<div class="relative flex min-h-screen w-full flex-col font-display">
+    <div class="flex h-full grow flex-col">
+        <div class="flex flex-1 justify-center px-4 py-5 sm:px-10 md:px-20 lg:px-40">
+            <div class="flex max-w-[960px] flex-1 flex-col">
+                <!-- Header -->
+                <header class="flex flex-col sm:flex-row items-center justify-between gap-4 whitespace-nowrap border-b border-solid border-b-[#f0f2f4] dark:border-b-white/10 px-4 py-3 sm:px-10">
+                    <div class="flex items-center gap-4 text-black dark:text-white">
+                        <div class="size-6 text-primary">
+                            <svg fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                                <path clip-rule="evenodd" d="M24 18.4228L42 11.475V34.3663C42 34.7796 41.7457 35.1504 41.3601 35.2992L24 42V18.4228Z" fill="currentColor" fill-rule="evenodd"></path>
+                                <path clip-rule="evenodd" d="M24 8.18819L33.4123 11.574L24 15.2071L14.5877 11.574L24 8.18819ZM9 15.8487L21 20.4805V37.6263L9 32.9945V15.8487ZM27 37.6263V20.4805L39 15.8487V32.9945L27 37.6263ZM25.354 2.29885C24.4788 1.98402 23.5212 1.98402 22.646 2.29885L4.98454 8.65208C3.7939 9.08038 3 10.2097 3 11.475V34.3663C3 36.0196 4.01719 37.5026 5.55962 38.098L22.9197 44.7987C23.6149 45.0671 24.3851 45.0671 25.0803 44.7987L42.4404 38.098C43.9828 37.5026 45 36.0196 45 34.3663V11.475C45 10.2097 44.2061 9.08038 43.0155 8.65208L25.354 2.29885Z" fill="currentColor" fill-rule="evenodd"></path>
+                            </svg>
+                        </div>
+                        <h2 class="text-lg font-bold leading-tight tracking-[-0.015em] text-black dark:text-white">PIO Prep</h2>
+                    </div>
+                    <div class="flex items-center justify-center sm:justify-end gap-3">
+                        <!-- Notification Button -->
+                        <button class="flex h-10 cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg bg-primary/20 px-2.5 text-sm font-bold leading-normal tracking-[0.015em] text-primary hover:bg-primary/30 transition-colors">
+                            <span class="material-symbols-outlined text-primary" data-icon="Notifications" data-size="20px" data-weight="regular">notifications</span>
+                            <span class="hidden sm:inline">Notifications</span>
+                        </button>
+                        
+                        <!-- Logout Button -->
+                        <button id="logoutBtn" class="flex h-10 cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg border border-red-500 bg-transparent px-3 py-2 text-sm font-medium leading-normal text-red-500 hover:bg-red-500/10 transition-all duration-300 logout-btn-hover">
+                            <span class="material-symbols-outlined text-sm">logout</span>
+                            <span class="hidden sm:inline">Logout</span>
+                        </button>
+                        
+                        <!-- User Avatar -->
+                        <div class="aspect-square size-10 rounded-full bg-cover bg-center bg-no-repeat cursor-pointer hover:opacity-80 transition-opacity" data-alt="User avatar image" id="userAvatar" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuC7d02aNKsjzLtYZg7cmo1jfImHLBpfL14leLm9Ag-2qbju5nQlbsl7mHvjY-2Ps_OwY5Jllbok2OIKT7EAFBmLIxbXqzExIkyms-_TsL8C5WV79T7RjsX-rPV8V0GiNuU53q0IVohIX54E-vN1VrKetsGKke5qblC3oWOFkCX__G_ZXuCG_OIdEvkpq0mBxnvwgISE0LKI3wYU4OnMCo-XK2EB_gJuQBGeiVMUwzkvk4pLgL9mpNRUs3vngW-ncw56CV-rXSqVHaw");'></div>
+                    </div>
+                </header>
+
+                <!-- Main Content -->
+                <main class="flex-1">
+                    <h1 class="px-4 pb-3 pt-10 text-left text-2xl sm:text-3xl md:text-4xl font-bold leading-tight tracking-light text-[#111318] dark:text-white" id="welcomeTitle">
+                        Welcome, Student!
+                    </h1>
+
+                    <!-- Hero Section with Buttons -->
+                    <div class="p-4">
+                        <div class="flex flex-col items-stretch justify-start rounded-xl bg-white shadow-sm lg:flex-row lg:items-start dark:border dark:border-white/10 dark:bg-background-dark">
+                            <div class="aspect-video w-full rounded-t-xl bg-cover bg-center bg-no-repeat lg:w-1/3 lg:aspect-square lg:rounded-l-xl lg:rounded-r-none" data-alt="Abstract image of a graduation cap and books" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuB5LzveXGOJdw3Nw6ttGCGB3cgMonBskIkEq6i6PjMHeQabizsMe7WVjsBTlkeaapORlDx525WjBal-9U-mKfqHrk2W2gNy-L7tN0kf1HUCjtcUURFnRMSUeCRvil34hUzu84QeiftA1NFofTQnAJpaC2cLBQedJnnxY5Ou6iNvVFtFDDlAY9j8igDtIn8N8LeL67kLPeGciV5WtRJUfINTfPcjHKYFXzuJx--X3CqJCGDP6yrB5rE-3iIfT9GN24UF4n6F1GNW6DM");'></div>
+                            <div class="flex w-full min-w-72 grow flex-col items-stretch justify-center gap-4 p-6 lg:px-8">
+                                <p class="text-xl md:text-2xl font-bold leading-tight tracking-[-0.015em] text-[#111318] dark:text-white">
+                                    Unlock Your Full Potential
+                                </p>
+                                <p class="pb-2 text-sm md:text-base font-normal leading-normal text-[#616f89] dark:text-gray-400">
+                                    you can chat the adim up on whatsAPP on 08029091759 to report any problem 
+                                    Activate your account to get unlimited access to all study features and ace your exams.
+                                </p>
+                                
+                                <!-- BUTTONS SECTION - Perfectly Responsive -->
+                                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mt-2">
+                                    <!-- Get Activation Code Button -->
+                                    <a class="flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm md:text-base font-medium leading-normal text-white hover:bg-primary-hover transition-all duration-300 btn-hover-effect sm:flex-none sm:w-auto" 
+                                       href="active1.html">
+                                        <span class="material-symbols-outlined text-sm md:text-base">vpn_key</span>
+                                        <span class="truncate">Get Activation Code</span>
+                                    </a>
+                                    
+                                    <!-- I Have Already Paid Button -->
+                                    <a class="flex items-center justify-center gap-2 rounded-lg border-2 border-primary bg-transparent px-6 py-3 text-sm md:text-base font-medium leading-normal text-primary hover:bg-primary/10 transition-all duration-300 btn-hover-effect sm:flex-none sm:w-auto" 
+                                       href="active3.html">
+                                        <span class="material-symbols-outlined text-sm md:text-base">check_circle</span>
+                                        <span class="truncate">I Have Already Paid</span>
+                                    </a>
+                                </div>
+                                
+                                <!-- Optional: Help text -->
+                                <p class="text-xs text-center sm:text-left text-gray-400 dark:text-gray-500 mt-2">
+                                    Already have an activation code? Click "I Have Already Paid" to enter it.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Study Tools Section -->
+                    <h2 class="px-4 pb-3 pt-8 text-xl md:text-2xl font-bold leading-tight tracking-[-0.015em] text-[#111318] dark:text-white">
+                        Your Study Tools
+                    </h2>
+                    
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 px-4">
+                        <!-- Past Questions Card -->
+                        <div class="flex cursor-not-allowed flex-col items-start gap-3 rounded-xl bg-white/50 p-6 opacity-50 shadow-sm transition-opacity duration-300 dark:border dark:border-white/10 dark:bg-white/5">
+                            <div class="flex size-12 items-center justify-center rounded-full bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500">
+                                <span class="material-symbols-outlined text-2xl">library_books</span>
+                            </div>
+                            <h3 class="text-lg font-bold text-gray-500 dark:text-gray-400">Past Questions</h3>
+                            <p class="text-sm text-gray-400 dark:text-gray-500">Practice with thousands of questions from previous JAMB exams.</p>
+                            <div class="mt-auto flex items-center gap-1.5 rounded-full bg-gray-200 px-3 py-1 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                                <span class="material-symbols-outlined text-sm">lock</span>
+                                <span>Activation Required</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Test Interface Card -->
+                        <div class="flex cursor-not-allowed flex-col items-start gap-3 rounded-xl bg-white/50 p-6 opacity-50 shadow-sm transition-opacity duration-300 dark:border dark:border-white/10 dark:bg-white/5">
+                            <div class="flex size-12 items-center justify-center rounded-full bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500">
+                                <span class="material-symbols-outlined text-2xl">quiz</span>
+                            </div>
+                            <h3 class="text-lg font-bold text-gray-500 dark:text-gray-400">Test Interface</h3>
+                            <p class="text-sm text-gray-400 dark:text-gray-500">Simulate exam conditions with our realistic test interface.</p>
+                            <div class="mt-auto flex items-center gap-1.5 rounded-full bg-gray-200 px-3 py-1 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                                <span class="material-symbols-outlined text-sm">lock</span>
+                                <span>Activation Required</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Results & Analytics Card -->
+                        <div class="flex cursor-not-allowed flex-col items-start gap-3 rounded-xl bg-white/50 p-6 opacity-50 shadow-sm transition-opacity duration-300 dark:border dark:border-white/10 dark:bg-white/5">
+                            <div class="flex size-12 items-center justify-center rounded-full bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500">
+                                <span class="material-symbols-outlined text-2xl">analytics</span>
+                            </div>
+                            <h3 class="text-lg font-bold text-gray-500 dark:text-gray-400">Results & Analytics</h3>
+                            <p class="text-sm text-gray-400 dark:text-gray-500">Track your progress and identify areas for improvement.</p>
+                            <div class="mt-auto flex items-center gap-1.5 rounded-full bg-gray-200 px-3 py-1 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                                <span class="material-symbols-outlined text-sm">lock</span>
+                                <span>Activation Required</span>
+                            </div>
+                        </div>
+                    </div>
+                </main>
+
+                <!-- Footer -->
+                <footer class="mt-16 border-t border-solid border-t-[#f0f2f4] px-4 py-8 text-center dark:border-t-white/10">
+                    <div class="flex flex-wrap items-center justify-center gap-4 sm:gap-6">
+                        <a class="text-xs sm:text-sm font-normal leading-normal text-[#616f89] hover:text-primary dark:text-gray-400 dark:hover:text-primary transition-colors" href="#">
+                            Help/Support
+                        </a>
+                        <a class="text-xs sm:text-sm font-normal leading-normal text-[#616f89] hover:text-primary dark:text-gray-400 dark:hover:text-primary transition-colors" href="#">
+                            About Us
+                        </a>
+                        <a class="text-xs sm:text-sm font-normal leading-normal text-[#616f89] hover:text-primary dark:text-gray-400 dark:hover:text-primary transition-colors" href="#">
+                            Terms of Service
+                        </a>
+                        <a class="text-xs sm:text-sm font-normal leading-normal text-[#616f89] hover:text-primary dark:text-gray-400 dark:hover:text-primary transition-colors" href="#">
+                            Privacy Policy
+                        </a>
+                    </div>
+                    <p class="mt-4 text-xs text-gray-400 dark:text-gray-500">
+                        © 2024 PIO Prep. All Rights Reserved.
+                    </p>
+                </footer>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- JavaScript for session check and logout functionality -->
+<script>
+    // Logout function
+    async function logout() {
+        try {
+            const response = await fetch('/verifycode/api/logout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Show success message
+                showToast('Logged out successfully!', 'success');
+                // Redirect to home page or login page after 1 second
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1000);
+            } else {
+                showToast('Logout failed. Please try again.', 'error');
+            }
+        } catch (error) {
+            console.error('Logout error:', error);
+            showToast('Network error. Please try again.', 'error');
+        }
+    }
+    
+    // Show toast notification
+    function showToast(message, type) {
+        // Create toast element
+        const toast = document.createElement('div');
+        toast.className = `fixed top-20 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-white text-sm font-medium transition-all duration-300 transform translate-x-full ${
+            type === 'success' ? 'bg-green-500' : 'bg-red-500'
+        }`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        
+        // Animate in
+        setTimeout(() => {
+            toast.style.transform = 'translateX(0)';
+        }, 100);
+        
+        // Remove after 3 seconds
+        setTimeout(() => {
+            toast.style.transform = 'translateX(100%)';
+            setTimeout(() => {
+                toast.remove();
+            }, 300);
+        }, 3000);
+    }
+    
+    // Check user session and display user name
+    document.addEventListener('DOMContentLoaded', async function() {
+        try {
+            const response = await fetch('/verifycode/api/session');
+            const data = await response.json();
+            
+            if (data.loggedIn && data.user) {
+                const welcomeTitle = document.getElementById('welcomeTitle');
+                if (welcomeTitle && data.user.userName) {
+                    welcomeTitle.textContent = `Welcome, ${data.user.userName}!`;
+                }
+            }
+        } catch (error) {
+            console.log('Session check failed:', error);
+        }
+        
+        // Add logout button event listener
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', logout);
+        }
+    });
+</script>
+</body>
+</html>
