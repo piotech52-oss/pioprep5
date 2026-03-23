@@ -1,98 +1,385 @@
-// index.js - FINAL WORKING VERSION WITH ALL ROUTERS (PORT 30001)
+// index.js - COMPLETE WORKING VERSION WITH POSTGRESQL
 const express = require('express');
+const { Pool } = require('pg');
+const bcrypt = require('bcrypt');
 const session = require('express-session');
+const connectPgSimple = require('connect-pg-simple');
+const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
 
-// ===============================
-// DEBUG MIDDLEWARE
-// ===============================
-app.use((req, res, next) => {
-    console.log(`📍 ${req.method} ${req.url}`);
-    next();
-});
+// =========================
+// MIDDLEWARE CONFIGURATION
+// =========================
 
-// ===============================
-// BLOCK REDIRECTS FOR API ROUTES
-// ===============================
-app.use('/api', (req, res, next) => {
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    
-    const originalRedirect = res.redirect;
-    res.redirect = function(url) {
-        console.error(`❌ BLOCKED REDIRECT: ${req.method} ${req.url} -> ${url}`);
-        return res.status(500).json({ 
-            success: false, 
-            message: 'Redirect blocked - API should return JSON' 
-        });
-    };
-    next();
-});
+app.use(cors({
+    origin: process.env.NODE_ENV === 'production' 
+        ? 'https://pioprep.com.ng'
+        : 'http://localhost:3000',
+    credentials: true
+}));
 
-// ===============================
-// DATABASE STATUS
-// ===============================
-let dbStatus = {
-    connected: false,
-    type: 'Mock Data',
-    message: 'Using development database'
-};
-
-// Try to connect to Supabase
-try {
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    
-    if (supabaseUrl && supabaseKey) {
-        const { createClient } = require('@supabase/supabase-js');
-        const supabase = createClient(supabaseUrl, supabaseKey);
-        
-        // Test connection
-        setTimeout(async () => {
-            try {
-                const { error } = await supabase.from('subjects').select('*').limit(1);
-                if (!error) {
-                    dbStatus.connected = true;
-                    dbStatus.type = 'Supabase PostgreSQL';
-                    dbStatus.message = 'Connected to live database';
-                    console.log('✅ Database: Connected to Supabase');
-                } else {
-                    console.log('⚠️ Database: Using mock data (Supabase error)');
-                }
-            } catch (err) {
-                console.log('⚠️ Database: Using mock data (connection failed)');
-            }
-        }, 1000);
-    }
-} catch (error) {
-    console.log('📊 Database: Mock data enabled');
-}
-
-// ===============================
-// MIDDLEWARE
-// ===============================
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.static(__dirname));
 
+// =========================
+// POSTGRESQL CONFIGURATION (Supabase)
+// =========================
+
+function encodeDatabaseUrl(url) {
+    if (!url) return url;
+    return url.replace(/:(.*?)@/, (match, p1) => {
+        if (p1.includes('@') || p1.includes('#') || p1.includes('!')) {
+            return ':' + encodeURIComponent(p1) + '@';
+        }
+        return match;
+    });
+}
+
+const databaseUrl = encodeDatabaseUrl(process.env.DATABASE_URL);
+
+const pool = new Pool({
+    connectionString: databaseUrl,
+    ssl: {
+        rejectUnauthorized: false,
+        sslmode: 'require'
+    },
+    max: 1,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+});
+
+let dbConnected = false;
+let connectionChecked = false;
+
+async function testDatabaseConnection() {
+    try {
+        const client = await pool.connect();
+        console.log('✅ Connected to Supabase PostgreSQL!');
+        dbConnected = true;
+        connectionChecked = true;
+        client.release();
+        await client.query('SELECT 1');
+        console.log('✅ Database queries working');
+        
+        await initializeDatabase();
+        return true;
+    } catch (err) {
+        console.error('❌ Error connecting to Supabase:', err.message);
+        dbConnected = false;
+        connectionChecked = true;
+        return false;
+    }
+}
+
+testDatabaseConnection();
+setInterval(testDatabaseConnection, 30000);
+
+app.use((req, res, next) => {
+    req.dbConnected = dbConnected;
+    req.connectionChecked = connectionChecked;
+    next();
+});
+
+// =========================
+// SESSION CONFIGURATION
+// =========================
+
+let sessionStore;
+try {
+    const PgSession = connectPgSimple(session);
+    if (dbConnected) {
+        sessionStore = new PgSession({
+            pool: pool,
+            tableName: 'user_sessions',
+            createTableIfMissing: true
+        });
+    }
+} catch (error) {
+    console.log('⚠️ Session store using memory');
+}
+
 app.use(session({
+    store: sessionStore,
     secret: process.env.SESSION_SECRET || 'jamb-secret-key-2024',
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 }
+    cookie: {
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax'
+    }
 }));
 
-// ===============================
-// LOAD ALL ROUTERS - ORDER MATTERS!
-// ===============================
+// =========================
+// DATABASE INITIALIZATION
+// =========================
+
+async function initializeDatabase() {
+    if (!dbConnected) return;
+    
+    try {
+        const result = await pool.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'jambuser'
+            );
+        `);
+        
+        if (!result.rows[0].exists) {
+            console.log('📝 Creating jambuser table...');
+            await pool.query(`
+                CREATE TABLE jambuser (
+                    id SERIAL PRIMARY KEY,
+                    "userName" VARCHAR(100) NOT NULL,
+                    email VARCHAR(255) NOT NULL UNIQUE,
+                    password VARCHAR(255) NOT NULL,
+                    role VARCHAR(50) DEFAULT 'student',
+                    is_activated VARCHAR(1) DEFAULT '0',
+                    "activationCode" VARCHAR(10),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+            console.log('✅ jambuser table created');
+        } else {
+            const countResult = await pool.query("SELECT COUNT(*) as count FROM jambuser");
+            console.log(`📊 Database has ${countResult.rows[0].count} existing users`);
+        }
+        
+        const sessionTable = await pool.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'user_sessions'
+            );
+        `);
+        
+        if (!sessionTable.rows[0].exists) {
+            await pool.query(`
+                CREATE TABLE user_sessions (
+                    sid VARCHAR NOT NULL PRIMARY KEY,
+                    sess JSON NOT NULL,
+                    expire TIMESTAMP NOT NULL
+                );
+            `);
+            console.log('✅ user_sessions table created');
+        }
+        
+    } catch (error) {
+        console.error('❌ Database initialization error:', error.message);
+    }
+}
+
+// =========================
+// UTILITY FUNCTIONS
+// =========================
+
+function isRealisticEmail(email) {
+    if (!email) return false;
+    email = email.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) return false;
+    if (email.includes("..")) return false;
+    if (email.length < 6) return false;
+    const tldRegex = /\.(com|net|org|edu|gov|io|ng|co|info|biz|me|tech)$/;
+    if (!tldRegex.test(email)) return false;
+    return true;
+}
+
+const requireLogin = (req, res, next) => {
+    if (!req.session || !req.session.isLoggedIn) {
+        return res.status(401).json({ error: 'Please login first' });
+    }
+    next();
+};
+
+// =========================
+// AUTH ROUTES
+// =========================
+
+app.get('/api/health', async (req, res) => {
+    const status = {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        service: 'JAMB CBT Authentication',
+        environment: process.env.NODE_ENV || 'development',
+        database: {
+            connected: dbConnected,
+            type: 'Supabase PostgreSQL',
+            checked: connectionChecked
+        }
+    };
+    
+    if (dbConnected) {
+        try {
+            const dbTest = await pool.query('SELECT NOW() as time');
+            status.database.time = dbTest.rows[0].time;
+        } catch (error) {
+            status.database.error = error.message;
+        }
+    }
+    
+    res.json(status);
+});
+
+app.get('/api/session', (req, res) => {
+    if (req.session && req.session.isLoggedIn) {
+        res.json({
+            loggedIn: true,
+            user: {
+                id: req.session.userId,
+                userName: req.session.userName,
+                email: req.session.email,
+                is_activated: req.session.is_activated === '1'
+            }
+        });
+    } else {
+        res.json({ loggedIn: false });
+    }
+});
+
+app.post('/api/register', async (req, res) => {
+    let { userName, email, password } = req.body;
+
+    console.log('📝 Registration attempt:', { userName, email });
+
+    if (!dbConnected) {
+        return res.status(503).json({ 
+            error: "Database is currently unavailable. Please try again later."
+        });
+    }
+
+    try {
+        if (!userName || !email || !password) {
+            return res.status(400).json({ error: "All fields are required" });
+        }
+
+        if (!isRealisticEmail(email)) {
+            return res.status(400).json({ error: "Invalid email format" });
+        }
+
+        userName = userName.trim();
+        email = email.trim().toLowerCase();
+        password = password.trim();
+
+        if (password.length < 6) {
+            return res.status(400).json({ error: "Password must be at least 6 characters" });
+        }
+
+        const existingUsers = await pool.query(
+            "SELECT id FROM jambuser WHERE email = $1",
+            [email]
+        );
+
+        if (existingUsers.rows.length > 0) {
+            return res.status(400).json({ error: "Email already registered" });
+        }
+
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+        const result = await pool.query(
+            "INSERT INTO jambuser (\"userName\", email, password, role, is_activated) VALUES ($1, $2, $3, $4, $5) RETURNING id, \"userName\", email",
+            [userName, email, hashedPassword, 'student', '0']
+        );
+
+        console.log(`✅ New user registered: ${email}`);
+        
+        return res.json({
+            success: true,
+            message: "Registration successful! Please login."
+        });
+
+    } catch (error) {
+        console.error('❌ Registration error:', error.message);
+        if (error.code === '23505') {
+            return res.status(400).json({ error: "Email already registered" });
+        }
+        return res.status(500).json({ error: "Server error during registration" });
+    }
+});
+
+app.post('/api/login', async (req, res) => {
+    const { email, password } = req.body;
+
+    console.log(`🔐 Login attempt for: ${email}`);
+
+    if (!dbConnected) {
+        return res.status(503).json({ 
+            error: "Database is currently unavailable. Please try again later."
+        });
+    }
+
+    try {
+        if (!email || !password) {
+            return res.status(400).json({ error: "Email and password are required" });
+        }
+
+        const cleanEmail = email.trim().toLowerCase();
+        
+        const userResult = await pool.query(
+            "SELECT * FROM jambuser WHERE email = $1",
+            [cleanEmail]
+        );
+
+        if (userResult.rows.length === 0) {
+            return res.status(401).json({ error: "Invalid email or password" });
+        }
+
+        const user = userResult.rows[0];
+        
+        const isMatch = await bcrypt.compare(password, user.password);
+        
+        if (!isMatch) {
+            return res.status(401).json({ error: "Invalid email or password" });
+        }
+
+        const isActivated = user.is_activated === '1';
+
+        req.session.userId = user.id;
+        req.session.email = user.email;
+        req.session.userName = user.userName;
+        req.session.isLoggedIn = true;
+        req.session.is_activated = user.is_activated;
+
+        return res.json({
+            success: true,
+            message: "Login successful!",
+            user: {
+                id: user.id,
+                userName: user.userName,
+                email: user.email,
+                is_activated: isActivated
+            },
+            redirectTo: isActivated ? "/home.html" : "/homeforall.html"
+        });
+
+    } catch (error) {
+        console.error('Login error:', error.message);
+        return res.status(500).json({ error: "Server error during authentication" });
+    }
+});
+
+app.post('/api/logout', (req, res) => {
+    req.session.destroy((err) => {
+        if (err) {
+            return res.status(500).json({ error: "Could not logout" });
+        }
+        res.json({ success: true, message: "Logged out successfully" });
+    });
+});
+
+// =========================
+// LOAD OTHER ROUTERS
+// =========================
 console.log('📦 Loading application routes...');
 
-// 1. Load exam router FIRST (most specific)
 try {
     const examRouter = require('./server.js');
     app.use('/api', examRouter);
@@ -101,7 +388,6 @@ try {
     console.log('⚠️ Exam router issue:', error.message);
 }
 
-// 2. Load verifycode router
 try {
     app.use('/verifycode', require('./verifycode.js'));
     console.log('✅ VerifyCode router loaded');
@@ -109,7 +395,6 @@ try {
     console.log('⚠️ VerifyCode router issue:', error.message);
 }
 
-// 3. Load payment router
 try {
     app.use('/', require('./payment.js'));
     console.log('✅ Payment router loaded');
@@ -117,7 +402,6 @@ try {
     console.log('⚠️ Payment router issue:', error.message);
 }
 
-// 4. Load admin router
 try {
     app.use('/', require('./adminlogin.js'));
     console.log('✅ Admin router loaded');
@@ -125,7 +409,6 @@ try {
     console.log('⚠️ Admin router issue:', error.message);
 }
 
-// 5. Load main router LAST (least specific)
 try {
     app.use('/', require('./router.js'));
     console.log('✅ Main router loaded');
@@ -133,103 +416,58 @@ try {
     console.log('⚠️ Main router issue:', error.message);
 }
 
-// ===============================
-// SESSION & USER ROUTES
-// ===============================
-app.get('/api/session', (req, res) => {
-    res.json({
-        loggedIn: true,
-        user: {
-            id: 1,
-            userName: 'Student',
-            email: 'student@example.com',
-            is_activated: true
-        }
-    });
-});
-
-app.get('/api/user/stats', (req, res) => {
-    res.json({
-        success: true,
-        stats: {
-            completedExams: 0,
-            averageScore: 0,
-            totalTime: 0,
-            streak: 0
-        }
-    });
-});
-
-app.get('/api/test', (req, res) => {
-    res.json({ success: true, message: 'API test working' });
-});
-
-app.get('/api/health', (req, res) => {
-    res.json({
-        success: true,
-        message: 'System healthy',
-        database: dbStatus.type,
-        timestamp: new Date().toISOString()
-    });
-});
-
-// ===============================
-// SERVE HOME.HTML
-// ===============================
-const homeFilePath = path.join(__dirname, 'home.html');
-
-if (fs.existsSync(homeFilePath)) {
-    console.log(`✅ Found home.html`);
-} else {
-    console.log('❌ home.html not found!');
-}
+// =========================
+// SERVE HTML FILES
+// =========================
 
 app.get('/', (req, res) => {
-    if (fs.existsSync(homeFilePath)) {
-        res.sendFile(homeFilePath);
+    res.sendFile(path.join(__dirname, 'login.html'));
+});
+
+app.get('/:page.html', (req, res) => {
+    const filePath = path.join(__dirname, `${req.params.page}.html`);
+    if (fs.existsSync(filePath)) {
+        res.sendFile(filePath);
     } else {
-        res.send('home.html not found');
+        res.status(404).send('Page not found');
     }
 });
 
-app.get('/test', (req, res) => {
-    res.json({ 
-        success: true, 
-        message: 'Server is running',
-        database: dbStatus.type,
-        time: new Date().toISOString()
-    });
-});
-
-// ===============================
+// =========================
 // 404 HANDLER
-// ===============================
+// =========================
 app.use((req, res) => {
     if (req.path.startsWith('/api')) {
         res.status(404).json({ success: false, message: 'API route not found' });
     } else {
-        res.status(404).send('Not found');
+        res.status(404).send('Page not found');
     }
 });
 
-// ===============================
-// START SERVER ON PORT 30001
-// ===============================
-const PORT = 30001; // Force port 30001
+// =========================
+// ERROR HANDLER
+// =========================
+app.use((err, req, res, next) => {
+    console.error('❌ Server error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+});
 
-app.listen(PORT, () => {
-    console.log('\n' + '='.repeat(60));
-    console.log('🎉 JAMB CBT SYSTEM STARTED SUCCESSFULLY!');
-    console.log('='.repeat(60));
-    console.log(`📍 URL: http://localhost:${PORT}`);
-    console.log(`📊 Database: ${dbStatus.type}`);
-    console.log('='.repeat(60));
-    console.log('\n✅ TEST THESE URLs:');
-    console.log(`   Home:        http://localhost:${PORT}`);
-    console.log(`   Test:        http://localhost:${PORT}/api/test`);
-    console.log(`   Subjects:    http://localhost:${PORT}/api/subjects`);
-    console.log(`   Years:       http://localhost:${PORT}/api/years`);
-    console.log(`   Health:      http://localhost:${PORT}/api/health`);
-    console.log(`   Session:     http://localhost:${PORT}/api/session`);
-    console.log('='.repeat(60));
-});  
+// =========================
+// EXPORT FOR VERCEL
+// =========================
+module.exports = app;
+
+// =========================
+// LOCAL DEVELOPMENT
+// =========================
+if (require.main === module) {
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+        console.log('\n' + '='.repeat(50));
+        console.log('🎯 JAMB CBT System Started!');
+        console.log('='.repeat(50));
+        console.log(`📍 http://localhost:${PORT}`);
+        console.log(`📊 Database: ${dbConnected ? '✅ Connected' : '❌ Disconnected'}`);
+        console.log('='.repeat(50));
+    });
+}
