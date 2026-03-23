@@ -17,7 +17,7 @@ const app = express();
 
 app.use(cors({
     origin: process.env.NODE_ENV === 'production' 
-        ? 'https://pioprep.com.ng'
+        ? 'https://pioprep5-olwj.vercel.app'
         : 'http://localhost:3000',
     credentials: true
 }));
@@ -66,7 +66,6 @@ async function testDatabaseConnection() {
         client.release();
         await client.query('SELECT 1');
         console.log('✅ Database queries working');
-        
         await initializeDatabase();
         return true;
     } catch (err) {
