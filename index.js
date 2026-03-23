@@ -110,6 +110,53 @@ app.get('/api/health', (req, res) => {
     });
 });
 
+// ===============================
+// DEBUG ROUTE - CHECK SUPABASE CONNECTION
+// ===============================
+app.get('/api/debug-supabase', async (req, res) => {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseKey) {
+        return res.json({
+            success: false,
+            error: 'Missing Supabase credentials',
+            hasUrl: !!supabaseUrl,
+            hasKey: !!supabaseKey,
+            supabaseUrl: supabaseUrl || 'not set',
+            supabaseKeyPrefix: supabaseKey ? supabaseKey.substring(0, 20) + '...' : 'not set'
+        });
+    }
+    
+    try {
+        const { createClient } = require('@supabase/supabase-js');
+        const testSupabase = createClient(supabaseUrl, supabaseKey);
+        
+        // Try to query the jambuser table
+        const { data, error } = await testSupabase
+            .from('jambuser')
+            .select('count')
+            .limit(1);
+        
+        res.json({
+            success: !error,
+            supabaseUrl: supabaseUrl,
+            hasKey: true,
+            error: error ? error.message : null,
+            data: data,
+            dbStatusConnected: dbStatus.connected,
+            dbStatusType: dbStatus.type,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        res.json({
+            success: false,
+            error: error.message,
+            stack: error.stack
+        });
+    }
+});
+
 // Login route
 app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
