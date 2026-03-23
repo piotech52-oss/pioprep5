@@ -1,4 +1,4 @@
-// index.js - COMPLETE WORKING VERSION WITH POSTGRESQL
+// index.js - COMPLETE WORKING VERSION WITH POSTGRESQL AND DEBUG ROUTES
 const express = require('express');
 const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
@@ -227,6 +227,56 @@ app.get('/api/health', async (req, res) => {
     res.json(status);
 });
 
+// =========================
+// DEBUG ROUTES - ADDED
+// =========================
+
+// Check environment variables
+app.get('/api/test-env', (req, res) => {
+    res.json({
+        success: true,
+        hasDatabaseUrl: !!process.env.DATABASE_URL,
+        hasSupabaseUrl: !!process.env.SUPABASE_URL,
+        hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+        nodeEnv: process.env.NODE_ENV,
+        databaseUrlPrefix: process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, 80) + '...' : 'not set',
+        supabaseUrl: process.env.SUPABASE_URL,
+        serviceKeyPrefix: process.env.SUPABASE_SERVICE_ROLE_KEY ? process.env.SUPABASE_SERVICE_ROLE_KEY.substring(0, 30) + '...' : 'not set'
+    });
+});
+
+// Test database connection with detailed error
+app.get('/api/debug-db', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT NOW() as time');
+        res.json({
+            success: true,
+            message: '✅ Database connected!',
+            time: result.rows[0].time,
+            dbConnected: dbConnected
+        });
+    } catch (error) {
+        res.json({
+            success: false,
+            message: '❌ Database connection failed',
+            error: error.message,
+            code: error.code,
+            hint: error.hint,
+            dbConnected: dbConnected,
+            databaseUrlPrefix: process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, 60) + '...' : 'not set'
+        });
+    }
+});
+
+// Simple test route
+app.get('/api/test', (req, res) => {
+    res.json({ success: true, message: 'API test working' });
+});
+
+// =========================
+// SESSION ROUTE
+// =========================
+
 app.get('/api/session', (req, res) => {
     if (req.session && req.session.isLoggedIn) {
         res.json({
@@ -242,6 +292,10 @@ app.get('/api/session', (req, res) => {
         res.json({ loggedIn: false });
     }
 });
+
+// =========================
+// REGISTER ROUTE
+// =========================
 
 app.post('/api/register', async (req, res) => {
     let { userName, email, password } = req.body;
@@ -304,6 +358,10 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
+// =========================
+// LOGIN ROUTE
+// =========================
+
 app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
 
@@ -364,6 +422,10 @@ app.post('/api/login', async (req, res) => {
         return res.status(500).json({ error: "Server error during authentication" });
     }
 });
+
+// =========================
+// LOGOUT ROUTE
+// =========================
 
 app.post('/api/logout', (req, res) => {
     req.session.destroy((err) => {
