@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { Pool } = require('pg'); // PostgreSQL
+const { Pool } = require('pg');
 const nodemailer = require('nodemailer');
 const multer = require('multer');
 const path = require('path');
@@ -14,12 +14,13 @@ const sgMail = require('@sendgrid/mail');
 sgMail.setApiKey('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');
 
 // ========== SUPABASE POSTGRESQL CONNECTION ==========
-// FIXED: Using the correct password with URL encoding
+// FIXED: Using the correct password PioPrep2024! with URL encoding
 const encodedPassword = encodeURIComponent('PioPrep2024!');
-const connectionString = process.env.DATABASE_URL || `postgresql://postgres.vbpehelxdstkasscjiov:${encodedPassword}@aws-1-eu-west-1.pooler.supabase.com:6543/postgres`;
+const connectionString = `postgresql://postgres.vbpehelxdstkasscjiov:${encodedPassword}@aws-1-eu-west-1.pooler.supabase.com:6543/postgres`;
 
-console.log('🔧 Admin Database Connection String (password hidden)');
-console.log(`   Using password: PioPrep2024! (encoded as: ${encodedPassword})`);
+console.log('🔧 Admin Database Connection:');
+console.log(`   Using password: PioPrep2024!`);
+console.log(`   Encoded password: ${encodedPassword}`);
 
 const pool = new Pool({
     connectionString: connectionString,
@@ -79,7 +80,7 @@ router.use((req, res, next) => {
 
 // ========== ADMIN TABLES SETUP ==========
 
-// Create admin table (PostgreSQL version with your exact table structure)
+// Create admin table
 async function createAdminTable() {
     if (!dbConnected) return;
     
@@ -179,7 +180,6 @@ async function createDefaultAdmin() {
             console.log('   Password:', adminPassword);
             console.log('   Security Code:', adminSecurityCode);
             
-            // Create payment notifications table after admin is created
             await createPaymentNotificationsTable();
         } else {
             console.log('✅ Default admin user already exists');
@@ -193,7 +193,6 @@ async function createDefaultAdmin() {
 
 // ========== MIDDLEWARE ==========
 
-// Middleware to check admin authentication
 const checkAdminAuth = (req, res, next) => {
     if (!req.session || !req.session.adminLoggedIn) {
         return res.redirect('/admin/login');
@@ -233,7 +232,6 @@ const upload = multer({
 
 // ========== EMAIL FUNCTIONS ==========
 
-// Function to send admin email notification
 async function sendPaymentEmailNotification(paymentData) {
     try {
         const adminEmail = 'piotech52@gmail.com';
@@ -250,27 +248,27 @@ async function sendPaymentEmailNotification(paymentData) {
                     
                     <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0;">
                         <table style="width: 100%; border-collapse: collapse;">
-                              <tr>
+                               <tr>
                                 <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;"><strong>Payment ID:</strong></td>
                                 <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;">${payment_id}</td>
-                              </tr>
-                              <tr>
+                               </tr>
+                               <tr>
                                 <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;"><strong>User Email:</strong></td>
                                 <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;">${user_email}</td>
-                              </tr>
-                              <tr>
+                               </tr>
+                               <tr>
                                 <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;"><strong>Amount:</strong></td>
                                 <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;">${currency} ${amount}</td>
-                              </tr>
-                              <tr>
+                               </tr>
+                               <tr>
                                 <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;"><strong>Payment Method:</strong></td>
                                 <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;">${payment_method}</td>
-                              </tr>
-                              <tr>
+                               </tr>
+                               <tr>
                                 <td style="padding: 10px;"><strong>Note:</strong></td>
                                 <td style="padding: 10px;">${note || 'No note provided'}</td>
-                              </tr>
-                          </table>
+                               </tr>
+                           </table>
                     </div>
                     
                     <div style="margin-top: 30px; padding: 15px; background: #e8f4fd; border-radius: 8px; border-left: 4px solid #3498db;">
@@ -306,7 +304,6 @@ async function sendPaymentEmailNotification(paymentData) {
         };
         
         await sgMail.send(msg);
-        
         console.log(`✅ Payment email notification sent to admin`);
         return true;
     } catch (error) {
@@ -317,7 +314,7 @@ async function sendPaymentEmailNotification(paymentData) {
 
 // ========== ADMIN LOGIN ROUTES ==========
 
-// Admin login page - IMPROVED to capture full password
+// Admin login page
 router.get("/admin/login", (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -325,104 +322,36 @@ router.get("/admin/login", (req, res) => {
         <head>
             <title>Admin Login</title>
             <style>
-                body { 
-                    font-family: Arial; 
-                    padding: 50px; 
-                    text-align: center; 
+                body { font-family: Arial; padding: 50px; text-align: center; 
                     background: linear-gradient(135deg, #1a237e 0%, #311b92 100%);
-                    height: 100vh; 
-                    display: flex; 
-                    justify-content: center; 
-                    align-items: center; 
-                    margin: 0;
-                }
-                .login-box { 
-                    background: white; 
-                    padding: 40px; 
-                    border-radius: 10px; 
-                    box-shadow: 0 15px 35px rgba(0,0,0,0.3); 
-                    width: 100%; 
-                    max-width: 400px;
-                }
-                h1 { 
-                    color: #1a237e; 
-                    margin-bottom: 30px;
-                }
-                input { 
-                    width: 100%; 
-                    padding: 12px; 
-                    margin: 10px 0; 
-                    border: 2px solid #ddd; 
-                    border-radius: 5px; 
-                    font-size: 16px;
-                    box-sizing: border-box;
-                }
-                input:focus {
-                    outline: none;
-                    border-color: #1a237e;
-                }
-                button { 
-                    width: 100%; 
-                    padding: 12px; 
-                    background: #1a237e; 
-                    color: white; 
-                    border: none; 
-                    border-radius: 5px; 
-                    font-size: 16px; 
-                    cursor: pointer; 
-                    margin-top: 20px;
-                }
-                button:hover { 
-                    background: #311b92;
-                }
-                .back { 
-                    display: inline-block; 
-                    margin-top: 20px; 
-                    color: #1a237e; 
-                    text-decoration: none;
-                }
-                .credentials { 
-                    margin-top: 20px; 
-                    padding: 15px; 
-                    background: #f8f9fa; 
-                    border-radius: 5px; 
-                    font-size: 14px; 
-                    text-align: left;
-                }
-                .credentials code {
-                    background: #e9ecef;
-                    padding: 2px 6px;
-                    border-radius: 3px;
-                    font-size: 13px;
-                    word-break: break-all;
-                }
-                .message {
-                    margin-top: 15px;
-                    padding: 10px;
-                    border-radius: 5px;
-                }
-                .message.error {
-                    background: #f8d7da;
-                    color: #721c24;
-                    border: 1px solid #f5c6cb;
-                }
-                .message.success {
-                    background: #d4edda;
-                    color: #155724;
-                    border: 1px solid #c3e6cb;
-                }
+                    height: 100vh; display: flex; justify-content: center; align-items: center; margin: 0; }
+                .login-box { background: white; padding: 40px; border-radius: 10px; 
+                    box-shadow: 0 15px 35px rgba(0,0,0,0.3); width: 100%; max-width: 400px; }
+                h1 { color: #1a237e; margin-bottom: 30px; }
+                input { width: 100%; padding: 12px; margin: 10px 0; border: 2px solid #ddd; 
+                    border-radius: 5px; font-size: 16px; box-sizing: border-box; }
+                button { width: 100%; padding: 12px; background: #1a237e; color: white; 
+                    border: none; border-radius: 5px; font-size: 16px; cursor: pointer; margin-top: 20px; }
+                button:hover { background: #311b92; }
+                .back { display: inline-block; margin-top: 20px; color: #1a237e; text-decoration: none; }
+                .credentials { margin-top: 20px; padding: 15px; background: #f8f9fa; 
+                    border-radius: 5px; font-size: 14px; text-align: left; }
+                .credentials code { background: #e9ecef; padding: 2px 6px; border-radius: 3px; }
+                .message { margin-top: 15px; padding: 10px; border-radius: 5px; }
+                .message.error { background: #f8d7da; color: #721c24; }
+                .message.success { background: #d4edda; color: #155724; }
             </style>
         </head>
         <body>
             <div class="login-box">
                 <h1>🔐 Admin Login</h1>
-                <form id="loginForm" onsubmit="return false;">
+                <form id="loginForm">
                     <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required>
                     <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
-                    <input type="text" id="securityCode" placeholder="Security Code" autocomplete="off" required>
-                    <button type="submit" id="loginBtn">Login</button>
+                    <input type="text" id="securityCode" placeholder="Security Code" required>
+                    <button type="submit">Login</button>
                 </form>
-                <div id="message" style="margin-top: 15px;"></div>
+                <div id="message"></div>
                 <div class="credentials">
                     <strong>Default Admin Credentials:</strong><br>
                     Username/Email: <code>piotech52@gmail.com</code><br>
@@ -434,87 +363,36 @@ router.get("/admin/login", (req, res) => {
             <script>
                 document.getElementById('loginForm').addEventListener('submit', async (e) => {
                     e.preventDefault();
-                    
                     const username = document.getElementById('username').value.trim();
                     const password = document.getElementById('password').value;
                     const securityCode = document.getElementById('securityCode').value.trim();
                     const messageDiv = document.getElementById('message');
-                    const loginBtn = document.getElementById('loginBtn');
                     
-                    // Debug logging
-                    console.log('Login attempt:', { username, passwordLength: password.length, securityCode });
-                    
-                    // Validate inputs
-                    if (!username) {
-                        showMessage(messageDiv, 'Please enter username/email', 'error');
-                        return;
-                    }
-                    if (!password) {
-                        showMessage(messageDiv, 'Please enter password', 'error');
-                        return;
-                    }
-                    if (!securityCode) {
-                        showMessage(messageDiv, 'Please enter security code', 'error');
-                        return;
-                    }
-                    
-                    // Show loading
-                    loginBtn.disabled = true;
-                    loginBtn.textContent = 'Logging in...';
-                    showMessage(messageDiv, 'Logging in...', 'success');
+                    messageDiv.textContent = 'Logging in...';
+                    messageDiv.className = 'message success';
                     
                     try {
                         const response = await fetch('/api/auth/login', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ 
-                                username: username, 
-                                password: password, 
-                                security_code: securityCode 
-                            })
+                            body: JSON.stringify({ username, password, security_code: securityCode })
                         });
                         
                         const data = await response.json();
-                        console.log('Login response:', data);
                         
                         if (data.success) {
-                            showMessage(messageDiv, 'Login successful! Redirecting...', 'success');
+                            messageDiv.textContent = 'Login successful! Redirecting...';
                             setTimeout(() => {
                                 window.location.href = '/admin/dashboard';
                             }, 1000);
                         } else {
-                            showMessage(messageDiv, data.message || 'Login failed', 'error');
-                            loginBtn.disabled = false;
-                            loginBtn.textContent = 'Login';
-                            document.getElementById('password').value = '';
+                            messageDiv.textContent = data.message || 'Login failed';
+                            messageDiv.className = 'message error';
                         }
                     } catch (error) {
+                        messageDiv.textContent = 'Connection error. Please try again.';
+                        messageDiv.className = 'message error';
                         console.error('Login error:', error);
-                        showMessage(messageDiv, 'Connection error. Please try again.', 'error');
-                        loginBtn.disabled = false;
-                        loginBtn.textContent = 'Login';
-                    }
-                });
-                
-                function showMessage(element, text, type) {
-                    element.textContent = text;
-                    element.className = 'message ' + type;
-                    if (type === 'success') {
-                        element.style.color = '#155724';
-                        element.style.background = '#d4edda';
-                        element.style.border = '1px solid #c3e6cb';
-                    } else if (type === 'error') {
-                        element.style.color = '#721c24';
-                        element.style.background = '#f8d7da';
-                        element.style.border = '1px solid #f5c6cb';
-                    }
-                }
-                
-                // Add Enter key support
-                document.getElementById('loginForm').addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        document.getElementById('loginBtn').click();
                     }
                 });
             </script>
@@ -528,12 +406,9 @@ router.post("/api/auth/login", async (req, res) => {
     const { username, password, security_code } = req.body;
     
     console.log('🔐 Admin login attempt:', username);
-    console.log('   Password length:', password ? password.length : 0);
-    console.log('   Security code length:', security_code ? security_code.length : 0);
 
-    // Check if database is connected
     if (!dbConnected) {
-        console.error('❌ Database not connected');
+        console.log('❌ Database not connected');
         return res.status(503).json({
             success: false,
             message: 'Database is currently unavailable. Please try again later.'
@@ -549,15 +424,12 @@ router.post("/api/auth/login", async (req, res) => {
 
     try {
         const query = "SELECT * FROM admin_users WHERE (username = $1 OR email = $1) AND is_active = TRUE";
-        
         const result = await pool.query(query, [username]);
-        
-        console.log('   Found admins:', result.rows.length);
 
         if (result.rows.length === 0) {
             return res.status(401).json({
                 success: false,
-                message: 'Invalid credentials - User not found'
+                message: 'Invalid credentials'
             });
         }
 
@@ -570,18 +442,14 @@ router.post("/api/auth/login", async (req, res) => {
             });
         }
         
-        // Check security code
         if (admin.security_code !== security_code) {
-            console.log('   Security code mismatch');
             return res.status(401).json({
                 success: false,
                 message: 'Invalid security code'
             });
         }
 
-        // Verify password
         const isPasswordValid = await bcrypt.compare(password, admin.password);
-        console.log('   Password valid:', isPasswordValid);
         
         if (!isPasswordValid) {
             return res.status(401).json({
@@ -641,19 +509,15 @@ router.post("/api/auth/logout", (req, res) => {
     });
 });
 
-// ========== DEBUG ROUTE ==========
+// ========== DEBUG ROUTES ==========
 router.get("/api/admin/debug-db", async (req, res) => {
     res.json({
         dbConnected: dbConnected,
         connectionChecked: connectionChecked,
-        databaseUrl: process.env.DATABASE_URL ? 'Set' : 'Not set',
-        supabaseUrl: process.env.SUPABASE_URL ? 'Set' : 'Not set',
-        nodeEnv: process.env.NODE_ENV,
         timestamp: new Date().toISOString()
     });
 });
 
-// ========== CHECK ADMIN USER ROUTE ==========
 router.get("/api/admin/check-user", async (req, res) => {
     if (!dbConnected) {
         return res.json({ success: false, message: 'Database not connected' });
@@ -670,207 +534,126 @@ router.get("/api/admin/check-user", async (req, res) => {
         res.json({
             success: true,
             adminExists: true,
-            admin: result.rows[0],
-            message: 'Admin user exists'
+            admin: result.rows[0]
         });
     } catch (err) {
         res.json({ success: false, error: err.message });
     }
 });
 
-// ========== REMOVE PAYMENT NOTIFICATIONS TABLE ROUTE (if needed) ==========
-router.get("/api/admin/fix-tables", async (req, res) => {
-    if (!dbConnected) {
-        return res.json({ success: false, message: 'Database not connected' });
-    }
-    
-    try {
-        // Check if payment_notifications table exists
-        const checkQuery = `
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_name = 'payment_notifications'
-            )
-        `;
-        const checkResult = await pool.query(checkQuery);
-        
-        if (checkResult.rows[0].exists) {
-            res.json({ success: true, message: 'payment_notifications table exists' });
-        } else {
-            // Create the table
-            await createPaymentNotificationsTable();
-            res.json({ success: true, message: 'payment_notifications table created' });
-        }
-    } catch (err) {
-        res.json({ success: false, error: err.message });
-    }
-});
-
-// ========== CONTINUE WITH REST OF YOUR ROUTES ==========
-// [Keep all your existing routes below - dashboard, payments, users, questions, etc.]
-
-// Admin dashboard route
+// ========== ADMIN DASHBOARD ==========
 router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
-    // Your existing dashboard HTML here
-    res.send(`...`); // Keep your existing dashboard HTML
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Admin Dashboard</title>
+            <style>
+                body { font-family: Arial; margin: 0; padding: 20px; background: #f5f5f5; }
+                .header { background: #1a237e; color: white; padding: 20px; margin-bottom: 20px; border-radius: 5px; }
+                .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 20px; }
+                .stat-card { background: white; padding: 20px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); text-align: center; }
+                .stat-value { font-size: 32px; font-weight: bold; color: #1a237e; }
+                .actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 20px; }
+                .action-btn { background: white; padding: 20px; text-align: center; border-radius: 5px; text-decoration: none; color: #333; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+                .action-btn:hover { background: #1a237e; color: white; transform: translateY(-2px); }
+                .logout-btn { background: #e74c3c; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; float: right; }
+                .logout-btn:hover { background: #c0392b; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>🎯 JAMB Prep Admin Dashboard</h1>
+                <p>Welcome back, ${req.session.adminUsername || 'Admin'}!</p>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            </div>
+            
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalUsers">0</div>
+                    <div>Total Users</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="totalRevenue">₦0</div>
+                    <div>Total Revenue</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="totalPayments">0</div>
+                    <div>Total Payments</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="unreadNotifications">0</div>
+                    <div>Unread Notifications</div>
+                </div>
+            </div>
+            
+            <div class="actions">
+                <a href="/admin/users" class="action-btn">
+                    <h3>👥 User Management</h3>
+                    <p>View and manage users</p>
+                </a>
+                <a href="/admin/payments" class="action-btn">
+                    <h3>💰 Payment Management</h3>
+                    <p>View all payments</p>
+                </a>
+                <a href="/admin/questions" class="action-btn">
+                    <h3>📚 Question Management</h3>
+                    <p>Manage JAMB questions</p>
+                </a>
+                <button class="action-btn" onclick="sendActivation()">
+                    <h3>🔑 Send Activation</h3>
+                    <p>Send activation code</p>
+                </button>
+            </div>
+            
+            <script>
+                async function loadStats() {
+                    try {
+                        const response = await fetch('/api/admin/statistics');
+                        const data = await response.json();
+                        if (data.success) {
+                            document.getElementById('totalUsers').textContent = data.statistics.totalUsers?.count || 0;
+                            document.getElementById('totalRevenue').textContent = '₦' + (data.statistics.totalRevenue?.total || 0);
+                            document.getElementById('totalPayments').textContent = data.statistics.totalPayments?.count || 0;
+                            document.getElementById('unreadNotifications').textContent = data.statistics.unreadNotifications?.count || 0;
+                        }
+                    } catch (error) {
+                        console.error('Error loading stats:', error);
+                    }
+                }
+                
+                function sendActivation() {
+                    const email = prompt('Enter user email:');
+                    if (email) {
+                        fetch('/send', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email })
+                        })
+                        .then(res => res.json())
+                        .then(data => {
+                            alert(data.message || 'Activation code sent!');
+                        })
+                        .catch(err => {
+                            alert('Error sending activation code');
+                        });
+                    }
+                }
+                
+                async function logout() {
+                    await fetch('/api/auth/logout', { method: 'POST' });
+                    window.location.href = '/admin/login';
+                }
+                
+                loadStats();
+                setInterval(loadStats, 10000);
+            </script>
+        </body>
+        </html>
+    `);
 });
 
-// Payments management
-router.get("/api/admin/payments", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) {
-        return res.status(503).json({ success: false, message: 'Database unavailable' });
-    }
-    
-    const query = `
-        SELECT up.*, ju."userName" 
-        FROM user_payments up
-        LEFT JOIN jambuser ju ON up.email = ju.email
-        ORDER BY up.created_at DESC
-    `;
-    
-    try {
-        const result = await pool.query(query);
-        res.json({ success: true, payments: result.rows });
-    } catch (err) {
-        console.error('❌ Error fetching payments:', err);
-        res.status(500).json({ success: false, message: 'Database error' });
-    }
-});
-
-router.get("/admin/payments", checkAdminAuth, (req, res) => {
-    res.send(`...`); // Keep your existing payments HTML
-});
-
-// User management
-router.get("/api/admin/users", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) {
-        return res.status(503).json({ success: false, message: 'Database unavailable' });
-    }
-    
-    try {
-        const usersQuery = `
-            SELECT 
-                id, 
-                "userName", 
-                email, 
-                role, 
-                is_activated, 
-                "activationCode", 
-                created_at,
-                updated_at 
-            FROM jambuser 
-            ORDER BY created_at DESC
-        `;
-        const usersResult = await pool.query(usersQuery);
-        const users = usersResult.rows;
-        
-        const statsQueries = {
-            totalUsers: "SELECT COUNT(*) as count FROM jambuser",
-            activeUsers: "SELECT COUNT(*) as count FROM jambuser WHERE is_activated = '1'",
-            students: "SELECT COUNT(*) as count FROM jambuser WHERE role = 'student'",
-            paidUsers: "SELECT COUNT(DISTINCT email) as count FROM user_payments WHERE status = 'completed'"
-        };
-        
-        const stats = {};
-        
-        for (const [key, query] of Object.entries(statsQueries)) {
-            try {
-                const result = await pool.query(query);
-                stats[key] = parseInt(result.rows[0]?.count) || 0;
-            } catch (err) {
-                console.error(`Error fetching ${key}:`, err);
-                stats[key] = 0;
-            }
-        }
-        
-        res.json({
-            success: true,
-            users: users,
-            stats: stats
-        });
-        
-    } catch (err) {
-        console.error('Error fetching users:', err);
-        res.status(500).json({ success: false, message: 'Database error' });
-    }
-});
-
-router.get("/admin/users", checkAdminAuth, (req, res) => {
-    res.send(`...`); // Keep your existing users HTML
-});
-
-// User activation routes
-router.post("/api/admin/users/:id/activate", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) {
-        return res.status(503).json({ success: false, message: 'Database unavailable' });
-    }
-    
-    const userId = req.params.id;
-    
-    try {
-        const query = `
-            UPDATE jambuser 
-            SET is_activated = '1', updated_at = CURRENT_TIMESTAMP 
-            WHERE id = $1
-            RETURNING id, email, "userName", is_activated
-        `;
-        
-        const result = await pool.query(query, [userId]);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'User not found' });
-        }
-        
-        console.log(`✅ User ${result.rows[0].email} activated successfully`);
-        
-        res.json({
-            success: true,
-            message: 'User activated successfully',
-            user: result.rows[0]
-        });
-        
-    } catch (err) {
-        console.error('Error activating user:', err);
-        res.status(500).json({ success: false, message: 'Database error' });
-    }
-});
-
-router.post("/api/admin/users/:id/deactivate", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) {
-        return res.status(503).json({ success: false, message: 'Database unavailable' });
-    }
-    
-    const userId = req.params.id;
-    
-    try {
-        const query = `
-            UPDATE jambuser 
-            SET is_activated = '0', updated_at = CURRENT_TIMESTAMP 
-            WHERE id = $1
-            RETURNING id, email, "userName", is_activated
-        `;
-        
-        const result = await pool.query(query, [userId]);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'User not found' });
-        }
-        
-        console.log(`✅ User ${result.rows[0].email} deactivated successfully`);
-        
-        res.json({
-            success: true,
-            message: 'User deactivated successfully',
-            user: result.rows[0]
-        });
-        
-    } catch (err) {
-        console.error('Error deactivating user:', err);
-        res.status(500).json({ success: false, message: 'Database error' });
-    }
-});
-
-// Statistics API
+// ========== STATISTICS API ==========
 router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
     if (!dbConnected) {
         return res.status(503).json({ success: false, message: 'Database unavailable' });
@@ -878,7 +661,6 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
     
     const queries = {
         totalUsers: "SELECT COUNT(*) as count FROM jambuser",
-        activeUsers: "SELECT COUNT(*) as count FROM jambuser WHERE is_activated = '1'",
         totalPayments: "SELECT COUNT(*) as count FROM user_payments",
         totalRevenue: "SELECT COALESCE(SUM(amount), 0) as total FROM user_payments WHERE status = 'completed'",
         unreadNotifications: "SELECT COUNT(*) as count FROM payment_notifications WHERE is_read = 0"
@@ -896,7 +678,6 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
                     results[key] = { count: parseInt(result.rows[0]?.count) || 0 };
                 }
             } catch (err) {
-                console.error(`Error fetching ${key}:`, err);
                 if (key === 'totalRevenue') {
                     results[key] = { total: 0 };
                 } else {
@@ -912,7 +693,7 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
     }
 });
 
-// Activation code route
+// ========== ACTIVATION CODE ROUTE ==========
 router.post("/send", async (req, res) => {
     if (!req.session || !req.session.adminLoggedIn) {
         return res.status(401).json({ success: false, message: "Unauthorized" });
@@ -930,31 +711,18 @@ router.post("/send", async (req, res) => {
     const activationCode = generateActivationCode();
     
     try {
-        const checkQuery = "SELECT * FROM user_payments WHERE email = $1";
-        const paymentResult = await pool.query(checkQuery, [email]);
-
+        const paymentResult = await pool.query("SELECT * FROM user_payments WHERE email = $1", [email]);
         if (paymentResult.rows.length === 0) {
-            return res.status(400).json({ 
-                success: false,
-                message: "User has not made payment" 
-            });
+            return res.status(400).json({ success: false, message: "User has not made payment" });
         }
-
-        const checkUserQuery = "SELECT * FROM jambuser WHERE email = $1";
-        const userResult = await pool.query(checkUserQuery, [email]);
-
+        
+        const userResult = await pool.query("SELECT * FROM jambuser WHERE email = $1", [email]);
         if (userResult.rows.length === 0) {
-            return res.status(400).json({ 
-                success: false,
-                message: "User not found. Please register first." 
-            });
+            return res.status(400).json({ success: false, message: "User not found. Please register first." });
         }
-
-        const updateQuery = 'UPDATE jambuser SET "activationCode" = $1 WHERE email = $2';
-        await pool.query(updateQuery, [activationCode, email]);
-
-        console.log(`✅ Activation code ${activationCode} updated for ${email}`);
-
+        
+        await pool.query('UPDATE jambuser SET "activationCode" = $1 WHERE email = $2', [activationCode, email]);
+        
         const emailContent = `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <div style="background: linear-gradient(135deg, #1a237e 0%, #311b92 100%); padding: 30px; text-align: center;">
@@ -980,7 +748,7 @@ router.post("/send", async (req, res) => {
                 </div>
             </div>
         `;
-
+        
         const msg = {
             to: email,
             from: 'piotech52@gmail.com',
@@ -989,164 +757,212 @@ router.post("/send", async (req, res) => {
         };
         
         await sgMail.send(msg);
-
-        res.json({
-            success: true,
-            message: 'Activation code sent successfully'
-        });
-
+        
+        res.json({ success: true, message: 'Activation code sent successfully' });
     } catch (error) {
         console.error('General error:', error);
-        res.status(500).json({ 
-            success: false,
-            message: "Server error" 
-        });
+        res.status(500).json({ success: false, message: "Server error" });
     }
 });
 
-// Payment notification routes
-router.post("/api/admin/payment-notification", async (req, res) => {
-    if (!dbConnected) return res.status(503).json({ success: false, message: 'Database unavailable' });
-    
-    try {
-        const { payment_id, user_email, amount, currency, payment_method, status, note } = req.body;
-        
-        const insertQuery = `
-            INSERT INTO payment_notifications 
-            (payment_id, user_email, amount, currency, payment_method, status, note) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id
-        `;
-        
-        const result = await pool.query(insertQuery, [payment_id, user_email, amount, currency, payment_method, status, note]);
-        const notificationId = result.rows[0].id;
-        
-        const emailSent = await sendPaymentEmailNotification({
-            payment_id, user_email, amount, currency, payment_method, note
-        });
-        
-        const updateQuery = "UPDATE payment_notifications SET admin_notified = $1 WHERE id = $2";
-        await pool.query(updateQuery, [emailSent ? 1 : 0, notificationId]);
-        
-        res.json({ success: true, notificationId: notificationId, emailSent: emailSent });
-    } catch (error) {
-        console.error('❌ Error in payment notification:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+// ========== USER MANAGEMENT ROUTES ==========
+router.get("/api/admin/users", checkAdminAuth, async (req, res) => {
+    if (!dbConnected) {
+        return res.status(503).json({ success: false, message: 'Database unavailable' });
     }
-});
-
-router.get("/api/admin/notifications/unread", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) return res.status(503).json({ success: false, message: 'Database unavailable' });
-    
-    const query = `
-        SELECT pn.*, ju."userName" 
-        FROM payment_notifications pn
-        LEFT JOIN jambuser ju ON pn.user_email = ju.email
-        WHERE pn.is_read = 0
-        ORDER BY pn.created_at DESC
-        LIMIT 20
-    `;
     
     try {
-        const result = await pool.query(query);
-        res.json({ success: true, notifications: result.rows, count: result.rows.length });
+        const usersResult = await pool.query(`
+            SELECT id, "userName", email, role, is_activated, "activationCode", created_at 
+            FROM jambuser ORDER BY created_at DESC
+        `);
+        
+        const stats = {
+            totalUsers: (await pool.query("SELECT COUNT(*) as count FROM jambuser")).rows[0]?.count || 0,
+            activeUsers: (await pool.query("SELECT COUNT(*) as count FROM jambuser WHERE is_activated = '1'")).rows[0]?.count || 0,
+            students: (await pool.query("SELECT COUNT(*) as count FROM jambuser WHERE role = 'student'")).rows[0]?.count || 0,
+            paidUsers: (await pool.query("SELECT COUNT(DISTINCT email) as count FROM user_payments WHERE status = 'completed'")).rows[0]?.count || 0
+        };
+        
+        res.json({ success: true, users: usersResult.rows, stats: stats });
     } catch (err) {
-        console.error('❌ Error fetching notifications:', err);
+        console.error('Error fetching users:', err);
         res.status(500).json({ success: false, message: 'Database error' });
     }
 });
 
-router.post("/api/admin/notifications/:id/read", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) return res.status(503).json({ success: false, message: 'Database unavailable' });
-    
+router.get("/admin/users", checkAdminAuth, (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>User Management</title>
+        <style>
+            body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+            table { width: 100%; background: white; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+            th { background: #1a237e; color: white; }
+            .status-active { color: green; font-weight: bold; }
+            .status-inactive { color: red; font-weight: bold; }
+            .btn { padding: 5px 10px; margin: 2px; border: none; border-radius: 3px; cursor: pointer; }
+            .btn-activate { background: #2ecc71; color: white; }
+            .btn-deactivate { background: #e67e22; color: white; }
+            .btn-code { background: #3498db; color: white; }
+        </style>
+        </head>
+        <body>
+            <h1>👥 User Management</h1>
+            <div id="users"></div>
+            <script>
+                async function loadUsers() {
+                    const response = await fetch('/api/admin/users');
+                    const data = await response.json();
+                    if (data.success) {
+                        let html = '<table><tr><th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th></tr>';
+                        data.users.forEach(user => {
+                            const isActive = user.is_activated === '1';
+                            html += \`
+                                <tr>
+                                    <td>\${user.userName || 'N/A'}</td>
+                                    <td>\${user.email}</td>
+                                    <td class="status-\${isActive ? 'active' : 'inactive'}">\${isActive ? 'Active' : 'Inactive'}</td>
+                                    <td>\${user.activationCode || 'No code'}</td>
+                                    <td>
+                                        <button class="btn btn-code" onclick="sendCode('\${user.email}')">Send Code</button>
+                                        \${!isActive ? 
+                                            '<button class="btn btn-activate" onclick="activateUser(' + user.id + ')">Activate</button>' : 
+                                            '<button class="btn btn-deactivate" onclick="deactivateUser(' + user.id + ')">Deactivate</button>'
+                                        }
+                                    </td>
+                                </tr>
+                            \`;
+                        });
+                        html += '</table>';
+                        document.getElementById('users').innerHTML = html;
+                    }
+                }
+                
+                async function sendCode(email) {
+                    const response = await fetch('/send', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email })
+                    });
+                    const data = await response.json();
+                    alert(data.message);
+                }
+                
+                async function activateUser(id) {
+                    const response = await fetch(\`/api/admin/users/\${id}/activate\`, { method: 'POST' });
+                    const data = await response.json();
+                    if (data.success) loadUsers();
+                }
+                
+                async function deactivateUser(id) {
+                    const response = await fetch(\`/api/admin/users/\${id}/deactivate\`, { method: 'POST' });
+                    const data = await response.json();
+                    if (data.success) loadUsers();
+                }
+                
+                loadUsers();
+            </script>
+        </body>
+        </html>
+    `);
+});
+
+router.post("/api/admin/users/:id/activate", checkAdminAuth, async (req, res) => {
+    if (!dbConnected) return res.status(503).json({ success: false });
     try {
-        await pool.query("UPDATE payment_notifications SET is_read = 1 WHERE id = $1", [req.params.id]);
-        res.json({ success: true, message: 'Notification marked as read' });
+        const result = await pool.query(`UPDATE jambuser SET is_activated = '1' WHERE id = $1 RETURNING id`, [req.params.id]);
+        res.json({ success: true, user: result.rows[0] });
     } catch (err) {
-        console.error('❌ Error marking notification as read:', err);
-        res.status(500).json({ success: false, message: 'Database error' });
+        res.status(500).json({ success: false });
     }
 });
 
-router.post("/api/admin/notifications/mark-all-read", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) return res.status(503).json({ success: false, message: 'Database unavailable' });
-    
+router.post("/api/admin/users/:id/deactivate", checkAdminAuth, async (req, res) => {
+    if (!dbConnected) return res.status(503).json({ success: false });
     try {
-        const result = await pool.query("UPDATE payment_notifications SET is_read = 1 WHERE is_read = 0");
-        res.json({ success: true, message: 'All notifications marked as read', affectedRows: result.rowCount });
+        const result = await pool.query(`UPDATE jambuser SET is_activated = '0' WHERE id = $1 RETURNING id`, [req.params.id]);
+        res.json({ success: true, user: result.rows[0] });
     } catch (err) {
-        console.error('❌ Error marking all notifications as read:', err);
-        res.status(500).json({ success: false, message: 'Database error' });
+        res.status(500).json({ success: false });
     }
 });
 
-// Question management routes
-router.get("/api/subjects", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) return res.status(503).json({ success: false, message: 'Database unavailable' });
-    
+// ========== PAYMENT MANAGEMENT ROUTES ==========
+router.get("/api/admin/payments", checkAdminAuth, async (req, res) => {
+    if (!dbConnected) return res.status(503).json({ success: false });
     try {
-        const result = await pool.query('SELECT id, subject_code, subject_name FROM subjects ORDER BY subject_name');
-        res.json({ success: true, subjects: result.rows });
+        const result = await pool.query(`
+            SELECT up.*, ju."userName" 
+            FROM user_payments up 
+            LEFT JOIN jambuser ju ON up.email = ju.email 
+            ORDER BY up.created_at DESC
+        `);
+        res.json({ success: true, payments: result.rows });
     } catch (err) {
-        console.error('Error fetching subjects:', err);
-        res.status(500).json({ success: false, error: 'Database error' });
+        res.status(500).json({ success: false });
     }
 });
 
-router.get("/api/subject-tables/:subject", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) return res.status(503).json({ success: false, message: 'Database unavailable' });
-    
-    const subject = req.params.subject.toLowerCase();
-    const tableName = `${subject}_questions`;
-    
-    try {
-        const checkResult = await pool.query(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1)`, [tableName]);
-        if (!checkResult.rows[0].exists) return res.json({ success: false, message: 'Table does not exist' });
-        
-        const structureResult = await pool.query(`SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = $1 ORDER BY ordinal_position`, [tableName]);
-        const countResult = await pool.query(`SELECT COUNT(*) as count FROM "${tableName}"`);
-        
-        res.json({ success: true, tableExists: true, tableName: tableName, rowCount: parseInt(countResult.rows[0]?.count) || 0, structure: structureResult.rows });
-    } catch (err) {
-        console.error('Error checking table:', err);
-        res.status(500).json({ success: false, error: 'Database error' });
-    }
+router.get("/admin/payments", checkAdminAuth, (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Payment Management</title>
+        <style>
+            body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+            table { width: 100%; background: white; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+            th { background: #1a237e; color: white; }
+        </style>
+        </head>
+        <body>
+            <h1>💰 Payment Management</h1>
+            <div id="payments"></div>
+            <script>
+                async function loadPayments() {
+                    const response = await fetch('/api/admin/payments');
+                    const data = await response.json();
+                    if (data.success && data.payments) {
+                        let html = ' <table><tr><th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th></tr>';
+                        data.payments.forEach(p => {
+                            html += \`<tr><td>\${p.userName || p.email}</td><td>₦\${p.amount}</td><td>\${p.payment_method}</td><td>\${p.status}</td><td>\${new Date(p.created_at).toLocaleDateString()}</td></tr>\`;
+                        });
+                        html += '</table>';
+                        document.getElementById('payments').innerHTML = html;
+                    }
+                }
+                loadPayments();
+            </script>
+        </body>
+        </html>
+    `);
 });
 
-router.post("/api/insert-question", checkAdminAuth, upload.single('question_image'), async (req, res) => {
-    // Your existing insert question code
-    res.json({ success: true, message: 'Question inserted' });
-});
-
-router.get("/api/search-questions", checkAdminAuth, async (req, res) => {
-    // Your existing search questions code
-    res.json({ success: true, questions: [] });
-});
-
-router.get("/api/question/:subject/:id", checkAdminAuth, async (req, res) => {
-    // Your existing get question code
-    res.json({ success: true, question: {} });
-});
-
-router.delete("/api/question/:subject/:id", checkAdminAuth, async (req, res) => {
-    // Your existing delete question code
-    res.json({ success: true, message: 'Question deleted' });
-});
-
-router.put("/api/question/:subject/:id", checkAdminAuth, upload.single('question_image'), async (req, res) => {
-    // Your existing update question code
-    res.json({ success: true, message: 'Question updated' });
-});
-
+// ========== QUESTION MANAGEMENT ROUTES ==========
 router.get("/admin/questions", checkAdminAuth, (req, res) => {
-    res.send(`...`); // Keep your existing questions HTML
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Question Management</title>
+        <style>
+            body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+        </style>
+        </head>
+        <body>
+            <h1>📚 Question Management</h1>
+            <p>Question management features coming soon...</p>
+            <a href="/admin/dashboard">Back to Dashboard</a>
+        </body>
+        </html>
+    `);
 });
 
 router.get("/api/admin/check-access", (req, res) => {
-    const isAdmin = req.session && req.session.adminLoggedIn && 
-                   ['super_admin', 'admin', 'moderator'].includes(req.session.adminRole);
-    
-    res.json({ success: true, canAccessAdmin: isAdmin, isAdmin: isAdmin });
+    const isAdmin = req.session && req.session.adminLoggedIn;
+    res.json({ success: true, isAdmin: isAdmin });
 });
 
 module.exports = router;
