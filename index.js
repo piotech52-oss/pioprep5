@@ -35,7 +35,7 @@ app.use('/api', (req, res, next) => {
 });
 
 // ===============================
-// SUPABASE CLIENT
+// SUPABASE CLIENT - FIXED
 // ===============================
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -58,8 +58,8 @@ if (supabaseUrl && supabaseKey) {
         dbStatus.type = 'Supabase PostgreSQL';
         console.log('✅ Supabase client initialized');
         
-        // Test connection
-        setTimeout(async () => {
+        // Test connection IMMEDIATELY (not in setTimeout)
+        (async () => {
             try {
                 const { data, error } = await supabase.from('jambuser').select('*').limit(1);
                 if (!error) {
@@ -73,7 +73,7 @@ if (supabaseUrl && supabaseKey) {
             } catch (err) {
                 console.log('⚠️ Database: Connection failed -', err.message);
             }
-        }, 1000);
+        })();
     } catch (error) {
         console.log('⚠️ Supabase client error:', error.message);
     }
@@ -153,7 +153,6 @@ app.get('/api/debug-supabase', async (req, res) => {
         const { createClient } = require('@supabase/supabase-js');
         const testSupabase = createClient(supabaseUrl, supabaseKey);
         
-        // Try to query the jambuser table
         const { data, error } = await testSupabase
             .from('jambuser')
             .select('count')
@@ -240,7 +239,6 @@ app.post('/api/login', async (req, res) => {
     }
     
     try {
-        // Check if user exists
         const { data: users, error } = await supabase
             .from('jambuser')
             .select('*')
@@ -257,7 +255,23 @@ app.post('/api/login', async (req, res) => {
         
         const user = users[0];
         
-        // For demo, accept any password if no bcrypt
+        // Verify password (plain text comparison for demo)
+        // In production, use bcrypt.compare()
+        let passwordValid = false;
+        
+        // Try bcrypt first
+        try {
+            const bcrypt = require('bcrypt');
+            passwordValid = await bcrypt.compare(password, user.password);
+        } catch (bcryptError) {
+            // Fallback to plain text
+            passwordValid = (password === user.password);
+        }
+        
+        if (!passwordValid) {
+            return res.status(401).json({ error: "Invalid email or password" });
+        }
+        
         const isActivated = user.is_activated === '1';
         
         req.session.userId = user.id;
@@ -300,7 +314,6 @@ app.post('/api/register', async (req, res) => {
             return res.status(400).json({ error: "All fields are required" });
         }
 
-        // Basic email validation
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(email)) {
             return res.status(400).json({ error: "Invalid email format" });
@@ -314,7 +327,6 @@ app.post('/api/register', async (req, res) => {
             return res.status(400).json({ error: "Password must be at least 6 characters" });
         }
 
-        // Check if user already exists
         const { data: existingUsers, error: checkError } = await supabase
             .from('jambuser')
             .select('id')
@@ -329,7 +341,6 @@ app.post('/api/register', async (req, res) => {
             return res.status(400).json({ error: "Email already registered" });
         }
 
-        // Hash password
         let hashedPassword = password;
         try {
             const bcrypt = require('bcrypt');
@@ -340,7 +351,6 @@ app.post('/api/register', async (req, res) => {
             console.log('bcrypt not available, storing plain password');
         }
 
-        // Insert new user
         const { data: newUser, error: insertError } = await supabase
             .from('jambuser')
             .insert([{ 
