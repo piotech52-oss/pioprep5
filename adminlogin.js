@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { Pool } = require('pg');
+const { createClient } = require('@supabase/supabase-js');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -12,62 +12,51 @@ require('dotenv').config();
 const sgMail = require('@sendgrid/mail');
 sgMail.setApiKey('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');
 
-// ========== SUPABASE POSTGRESQL CONNECTION ==========
-// Using Transaction Pooler with correct password
-const connectionString = 'postgresql://postgres.vbpehelxdstkasscjiov:PioPrep2024!@aws-1-eu-west-1.pooler.supabase.com:6543/postgres';
-console.log('🔧 Admin Database Connection:');
-console.log(`   Using Transaction Pooler: aws-1-eu-west-1.pooler.supabase.com:6543`);
-console.log(`   Encoded password: ${encodedPassword}`);
+// ========== SUPABASE CLIENT SETUP (SAME AS INDEX.JS) ==========
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const pool = new Pool({
-    connectionString: connectionString,
-    ssl: {
-        rejectUnauthorized: false,
-        sslmode: 'require'
-    },
-    max: 10,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
-});
-
-// Global connection status
+let supabase = null;
 let dbConnected = false;
 let connectionChecked = false;
 
-// Test database connection
-async function testDatabaseConnection() {
-    let client;
+console.log('🔧 Admin Environment Check:');
+console.log(`   SUPABASE_URL: ${supabaseUrl ? supabaseUrl : 'NOT SET'}`);
+console.log(`   SUPABASE_KEY: ${supabaseKey ? 'SET (length: ' + supabaseKey.length + ')' : 'NOT SET'}`);
+
+if (supabaseUrl && supabaseKey) {
     try {
-        console.log('🔌 Connecting to Supabase Transaction Pooler...');
-        client = await pool.connect();
-        console.log('✅ Admin DB connected to Supabase PostgreSQL!');
-        dbConnected = true;
+        supabase = createClient(supabaseUrl, supabaseKey);
+        console.log('✅ Admin Supabase client initialized');
+        
+        // Test connection immediately
+        (async () => {
+            try {
+                const { data, error } = await supabase.from('admin_users').select('*').limit(1);
+                if (!error) {
+                    dbConnected = true;
+                    connectionChecked = true;
+                    console.log('✅ Admin: Connected to Supabase');
+                    console.log(`   Admin users found: ${data ? data.length : 0}`);
+                    await createAdminTable();
+                } else {
+                    console.log('⚠️ Admin: Table check failed -', error.message);
+                    connectionChecked = true;
+                    await createAdminTable();
+                }
+            } catch (err) {
+                console.log('⚠️ Admin: Connection failed -', err.message);
+                connectionChecked = true;
+            }
+        })();
+    } catch (error) {
+        console.log('⚠️ Admin Supabase client error:', error.message);
         connectionChecked = true;
-        
-        // Test query
-        const result = await client.query('SELECT NOW() as current_time');
-        console.log('✅ Database query successful!');
-        
-        client.release();
-        
-        // Create tables
-        await createAdminTable();
-        
-        return true;
-    } catch (err) {
-        console.error('❌ Error connecting to Supabase:', err.message);
-        dbConnected = false;
-        connectionChecked = true;
-        if (client) client.release();
-        return false;
     }
+} else {
+    console.log('⚠️ Admin: Supabase credentials not available');
+    connectionChecked = true;
 }
-
-// Test connection immediately
-testDatabaseConnection();
-
-// Retry connection every 30 seconds
-setInterval(testDatabaseConnection, 30000);
 
 // Middleware to check database status
 router.use((req, res, next) => {
@@ -79,65 +68,97 @@ router.use((req, res, next) => {
 // ========== ADMIN TABLES SETUP ==========
 
 async function createAdminTable() {
-    if (!dbConnected) return;
-    
-    const createTableSQL = `
-        CREATE TABLE IF NOT EXISTS admin_users (
-            id SERIAL PRIMARY KEY,
-            username VARCHAR(50) NOT NULL UNIQUE,
-            password VARCHAR(255) NOT NULL,
-            security_code VARCHAR(10) NOT NULL,
-            full_name VARCHAR(100) NOT NULL,
-            email VARCHAR(100) NOT NULL UNIQUE,
-            role VARCHAR(20) DEFAULT 'admin',
-            is_active BOOLEAN DEFAULT TRUE,
-            login_attempts INTEGER DEFAULT 0,
-            account_locked_until TIMESTAMP,
-            last_login TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    `;
+    if (!supabase) return;
     
     try {
-        await pool.query(createTableSQL);
-        console.log('✅ Admin table checked/created');
+        // Check if admin_users table exists
+        const { error: checkError } = await supabase
+            .from('admin_users')
+            .select('id')
+            .limit(1);
+        
+        if (checkError && checkError.code === '42P01') {
+            console.log('📝 Creating admin_users table...');
+            
+            // Create table using raw SQL via Supabase RPC (if available)
+            const createTableSQL = `
+                CREATE TABLE IF NOT EXISTS admin_users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(50) NOT NULL UNIQUE,
+                    password VARCHAR(255) NOT NULL,
+                    security_code VARCHAR(10) NOT NULL,
+                    full_name VARCHAR(100) NOT NULL,
+                    email VARCHAR(100) NOT NULL UNIQUE,
+                    role VARCHAR(20) DEFAULT 'admin',
+                    is_active BOOLEAN DEFAULT TRUE,
+                    login_attempts INTEGER DEFAULT 0,
+                    account_locked_until TIMESTAMP,
+                    last_login TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            `;
+            
+            // Try to execute SQL (this may require pg_execute function)
+            const { error: createError } = await supabase.rpc('exec_sql', { sql: createTableSQL });
+            
+            if (createError) {
+                console.log('⚠️ Could not create table via RPC, will continue with existing data');
+            } else {
+                console.log('✅ Admin table created');
+            }
+        }
+        
         await createDefaultAdmin();
     } catch (err) {
-        console.error('❌ Error creating admin table:', err);
+        console.error('❌ Error in createAdminTable:', err);
     }
 }
 
 async function createPaymentNotificationsTable() {
-    if (!dbConnected) return;
-    
-    const createTableSQL = `
-        CREATE TABLE IF NOT EXISTS payment_notifications (
-            id SERIAL PRIMARY KEY,
-            payment_id VARCHAR(100) NOT NULL,
-            user_email VARCHAR(100) NOT NULL,
-            amount DECIMAL(10,2) NOT NULL,
-            currency VARCHAR(10) NOT NULL,
-            payment_method VARCHAR(50) NOT NULL,
-            status VARCHAR(50) NOT NULL,
-            note TEXT,
-            is_read SMALLINT DEFAULT 0,
-            admin_notified SMALLINT DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    `;
+    if (!supabase) return;
     
     try {
-        await pool.query(createTableSQL);
-        console.log('✅ Payment notifications table checked/created');
+        const { error: checkError } = await supabase
+            .from('payment_notifications')
+            .select('id')
+            .limit(1);
+        
+        if (checkError && checkError.code === '42P01') {
+            console.log('📝 Creating payment_notifications table...');
+            
+            const createTableSQL = `
+                CREATE TABLE IF NOT EXISTS payment_notifications (
+                    id SERIAL PRIMARY KEY,
+                    payment_id VARCHAR(100) NOT NULL,
+                    user_email VARCHAR(100) NOT NULL,
+                    amount DECIMAL(10,2) NOT NULL,
+                    currency VARCHAR(10) NOT NULL,
+                    payment_method VARCHAR(50) NOT NULL,
+                    status VARCHAR(50) NOT NULL,
+                    note TEXT,
+                    is_read SMALLINT DEFAULT 0,
+                    admin_notified SMALLINT DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            `;
+            
+            const { error: createError } = await supabase.rpc('exec_sql', { sql: createTableSQL });
+            
+            if (createError) {
+                console.log('⚠️ Could not create payment_notifications table');
+            } else {
+                console.log('✅ Payment notifications table created');
+            }
+        }
     } catch (err) {
         console.error('❌ Error creating payment notifications table:', err);
     }
 }
 
 async function createDefaultAdmin() {
-    if (!dbConnected) return;
+    if (!supabase) return;
     
     try {
         const adminUsername = 'piotech52@gmail.com';
@@ -146,36 +167,40 @@ async function createDefaultAdmin() {
         const adminSecurityCode = 'piotech52@gmail.com';
         const adminFullName = 'Pio Tech Administrator';
         
-        const checkQuery = "SELECT id FROM admin_users WHERE username = $1 OR email = $2";
-        const result = await pool.query(checkQuery, [adminUsername, adminEmail]);
+        // Check if admin exists
+        const { data: existingAdmin, error: checkError } = await supabase
+            .from('admin_users')
+            .select('id')
+            .or(`username.eq.${adminUsername},email.eq.${adminEmail}`)
+            .maybeSingle();
         
-        if (result.rows.length === 0) {
+        if (!existingAdmin) {
             const saltRounds = 10;
             const hashedPassword = await bcrypt.hash(adminPassword, saltRounds);
             
-            const insertQuery = `
-                INSERT INTO admin_users 
-                (username, email, password, security_code, full_name, role, is_active) 
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-            `;
+            const { error: insertError } = await supabase
+                .from('admin_users')
+                .insert([{
+                    username: adminUsername,
+                    email: adminEmail,
+                    password: hashedPassword,
+                    security_code: adminSecurityCode,
+                    full_name: adminFullName,
+                    role: 'super_admin',
+                    is_active: true
+                }]);
             
-            await pool.query(insertQuery, [
-                adminUsername,
-                adminEmail,
-                hashedPassword,
-                adminSecurityCode,
-                adminFullName,
-                'super_admin',
-                true
-            ]);
-            
-            console.log('✅ Default admin user created successfully');
-            console.log('📋 Admin Credentials:');
-            console.log('   Username/Email:', adminUsername);
-            console.log('   Password:', adminPassword);
-            console.log('   Security Code:', adminSecurityCode);
-            
-            await createPaymentNotificationsTable();
+            if (insertError) {
+                console.log('⚠️ Error creating admin:', insertError.message);
+            } else {
+                console.log('✅ Default admin user created successfully');
+                console.log('📋 Admin Credentials:');
+                console.log('   Username/Email:', adminUsername);
+                console.log('   Password:', adminPassword);
+                console.log('   Security Code:', adminSecurityCode);
+                
+                await createPaymentNotificationsTable();
+            }
         } else {
             console.log('✅ Default admin user already exists');
             await createPaymentNotificationsTable();
@@ -396,13 +421,13 @@ router.get("/admin/login", (req, res) => {
     `);
 });
 
-// Admin login API
+// Admin login API - USING SUPABASE CLIENT
 router.post("/api/auth/login", async (req, res) => {
     const { username, password, security_code } = req.body;
     
     console.log('🔐 Admin login attempt:', username);
 
-    if (!dbConnected) {
+    if (!supabase || !dbConnected) {
         console.log('❌ Database not connected');
         return res.status(503).json({
             success: false,
@@ -418,17 +443,29 @@ router.post("/api/auth/login", async (req, res) => {
     }
 
     try {
-        const query = "SELECT * FROM admin_users WHERE (username = $1 OR email = $1) AND is_active = TRUE";
-        const result = await pool.query(query, [username]);
+        // Query admin user using Supabase
+        const { data: admins, error } = await supabase
+            .from('admin_users')
+            .select('*')
+            .or(`username.eq.${username},email.eq.${username}`)
+            .eq('is_active', true);
 
-        if (result.rows.length === 0) {
+        if (error) {
+            console.error('Database error:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Database error: ' + error.message
+            });
+        }
+
+        if (!admins || admins.length === 0) {
             return res.status(401).json({
                 success: false,
                 message: 'Invalid credentials'
             });
         }
 
-        const admin = result.rows[0];
+        const admin = admins[0];
         
         if (admin.security_code !== security_code) {
             return res.status(401).json({
@@ -495,31 +532,53 @@ router.post("/api/auth/logout", (req, res) => {
 // ========== DEBUG ROUTE ==========
 router.get("/api/admin/debug-db", async (req, res) => {
     res.json({
+        supabaseAvailable: !!supabase,
         dbConnected: dbConnected,
         connectionChecked: connectionChecked,
+        supabaseUrl: process.env.SUPABASE_URL ? 'Set' : 'Not set',
+        supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'Set' : 'Not set',
         timestamp: new Date().toISOString()
     });
 });
 
-// ========== STATISTICS API ==========
+// ========== STATISTICS API - USING SUPABASE ==========
 router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) {
+    if (!supabase || !dbConnected) {
         return res.status(503).json({ success: false, message: 'Database unavailable' });
     }
     
     try {
-        const totalUsers = await pool.query("SELECT COUNT(*) as count FROM jambuser");
-        const totalPayments = await pool.query("SELECT COUNT(*) as count FROM user_payments");
-        const totalRevenue = await pool.query("SELECT COALESCE(SUM(amount), 0) as total FROM user_payments WHERE status = 'completed'");
-        const unreadNotifications = await pool.query("SELECT COUNT(*) as count FROM payment_notifications WHERE is_read = 0");
+        // Get total users
+        const { count: totalUsers, error: totalError } = await supabase
+            .from('jambuser')
+            .select('*', { count: 'exact', head: true });
+        
+        // Get total payments
+        const { count: totalPayments, error: paymentError } = await supabase
+            .from('user_payments')
+            .select('*', { count: 'exact', head: true });
+        
+        // Get total revenue
+        const { data: revenueData, error: revenueError } = await supabase
+            .from('user_payments')
+            .select('amount')
+            .eq('status', 'completed');
+        
+        const totalRevenue = revenueData?.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0) || 0;
+        
+        // Get unread notifications
+        const { count: unreadNotifications, error: notifError } = await supabase
+            .from('payment_notifications')
+            .select('*', { count: 'exact', head: true })
+            .eq('is_read', 0);
         
         res.json({
             success: true,
             statistics: {
-                totalUsers: { count: parseInt(totalUsers.rows[0]?.count) || 0 },
-                totalPayments: { count: parseInt(totalPayments.rows[0]?.count) || 0 },
-                totalRevenue: { total: parseFloat(totalRevenue.rows[0]?.total) || 0 },
-                unreadNotifications: { count: parseInt(unreadNotifications.rows[0]?.count) || 0 }
+                totalUsers: { count: totalUsers || 0 },
+                totalPayments: { count: totalPayments || 0 },
+                totalRevenue: { total: totalRevenue },
+                unreadNotifications: { count: unreadNotifications || 0 }
             }
         });
     } catch (error) {
@@ -528,7 +587,7 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
     }
 });
 
-// ========== SIMPLE DASHBOARD ==========
+// ========== DASHBOARD ==========
 router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -636,24 +695,34 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
     `);
 });
 
-// ========== USER MANAGEMENT ==========
+// ========== USER MANAGEMENT - USING SUPABASE ==========
 router.get("/api/admin/users", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) return res.status(503).json({ success: false, message: 'Database unavailable' });
+    if (!supabase || !dbConnected) {
+        return res.status(503).json({ success: false, message: 'Database unavailable' });
+    }
     
     try {
-        const users = await pool.query(`
-            SELECT id, "userName", email, role, is_activated, "activationCode", created_at 
-            FROM jambuser ORDER BY created_at DESC
-        `);
+        const { data: users, error } = await supabase
+            .from('jambuser')
+            .select('id, userName, email, role, is_activated, activationCode, created_at')
+            .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        // Get statistics
+        const { count: totalUsers } = await supabase.from('jambuser').select('*', { count: 'exact', head: true });
+        const { count: activeUsers } = await supabase.from('jambuser').select('*', { count: 'exact', head: true }).eq('is_activated', '1');
+        const { count: students } = await supabase.from('jambuser').select('*', { count: 'exact', head: true }).eq('role', 'student');
+        const { count: paidUsers } = await supabase.from('user_payments').select('*', { count: 'exact', head: true }).eq('status', 'completed');
         
         const stats = {
-            totalUsers: (await pool.query("SELECT COUNT(*) as count FROM jambuser")).rows[0]?.count || 0,
-            activeUsers: (await pool.query("SELECT COUNT(*) as count FROM jambuser WHERE is_activated = '1'")).rows[0]?.count || 0,
-            students: (await pool.query("SELECT COUNT(*) as count FROM jambuser WHERE role = 'student'")).rows[0]?.count || 0,
-            paidUsers: (await pool.query("SELECT COUNT(DISTINCT email) as count FROM user_payments WHERE status = 'completed'")).rows[0]?.count || 0
+            totalUsers: totalUsers || 0,
+            activeUsers: activeUsers || 0,
+            students: students || 0,
+            paidUsers: paidUsers || 0
         };
         
-        res.json({ success: true, users: users.rows, stats: stats });
+        res.json({ success: true, users: users, stats: stats });
     } catch (err) {
         console.error('Error fetching users:', err);
         res.status(500).json({ success: false, message: 'Database error' });
@@ -686,7 +755,7 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
                     const response = await fetch('/api/admin/users');
                     const data = await response.json();
                     if (data.success) {
-                        let html = '<table><tr><th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th></tr>';
+                        let html = ' 60% <th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th> </tr>';
                         data.users.forEach(user => {
                             const isActive = user.is_activated === '1';
                             html += \`
@@ -740,9 +809,14 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
 });
 
 router.post("/api/admin/users/:id/activate", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) return res.status(503).json({ success: false });
+    if (!supabase || !dbConnected) return res.status(503).json({ success: false });
     try {
-        await pool.query(`UPDATE jambuser SET is_activated = '1' WHERE id = $1`, [req.params.id]);
+        const { error } = await supabase
+            .from('jambuser')
+            .update({ is_activated: '1' })
+            .eq('id', req.params.id);
+        
+        if (error) throw error;
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ success: false });
@@ -750,26 +824,42 @@ router.post("/api/admin/users/:id/activate", checkAdminAuth, async (req, res) =>
 });
 
 router.post("/api/admin/users/:id/deactivate", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) return res.status(503).json({ success: false });
+    if (!supabase || !dbConnected) return res.status(503).json({ success: false });
     try {
-        await pool.query(`UPDATE jambuser SET is_activated = '0' WHERE id = $1`, [req.params.id]);
+        const { error } = await supabase
+            .from('jambuser')
+            .update({ is_activated: '0' })
+            .eq('id', req.params.id);
+        
+        if (error) throw error;
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ success: false });
     }
 });
 
-// ========== PAYMENT MANAGEMENT ==========
+// ========== PAYMENT MANAGEMENT - USING SUPABASE ==========
 router.get("/api/admin/payments", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) return res.status(503).json({ success: false });
+    if (!supabase || !dbConnected) return res.status(503).json({ success: false });
     try {
-        const result = await pool.query(`
-            SELECT up.*, ju."userName" 
-            FROM user_payments up 
-            LEFT JOIN jambuser ju ON up.email = ju.email 
-            ORDER BY up.created_at DESC
-        `);
-        res.json({ success: true, payments: result.rows });
+        const { data: payments, error } = await supabase
+            .from('user_payments')
+            .select('*')
+            .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        // Get user names
+        const { data: users } = await supabase.from('jambuser').select('email, userName');
+        const userMap = {};
+        users?.forEach(u => { userMap[u.email] = u.userName; });
+        
+        const paymentsWithNames = payments.map(p => ({
+            ...p,
+            userName: userMap[p.email] || null
+        }));
+        
+        res.json({ success: true, payments: paymentsWithNames });
     } catch (err) {
         res.status(500).json({ success: false });
     }
@@ -795,7 +885,7 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
                     const response = await fetch('/api/admin/payments');
                     const data = await response.json();
                     if (data.success && data.payments) {
-                        let html = '<table><tr><th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th></tr>';
+                        let html = ' aplenty <th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th>  </tr>';
                         data.payments.forEach(p => {
                             html += \`<tr><td>\${p.userName || p.email}</td><td>₦\${p.amount}</td><td>\${p.payment_method}</td><td>\${p.status}</td><td>\${new Date(p.created_at).toLocaleDateString()}</td></tr>\`;
                         });
@@ -810,13 +900,13 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
     `);
 });
 
-// ========== ACTIVATION CODE ROUTE ==========
+// ========== ACTIVATION CODE ROUTE - USING SUPABASE ==========
 router.post("/send", async (req, res) => {
     if (!req.session || !req.session.adminLoggedIn) {
         return res.status(401).json({ success: false, message: "Unauthorized" });
     }
     
-    if (!dbConnected) {
+    if (!supabase || !dbConnected) {
         return res.status(503).json({ success: false, message: 'Database unavailable' });
     }
     
@@ -828,18 +918,39 @@ router.post("/send", async (req, res) => {
     const activationCode = generateActivationCode();
     
     try {
-        const paymentResult = await pool.query("SELECT * FROM user_payments WHERE email = $1", [email]);
-        if (paymentResult.rows.length === 0) {
+        // Check if user has made payment
+        const { data: payments, error: paymentError } = await supabase
+            .from('user_payments')
+            .select('*')
+            .eq('email', email);
+        
+        if (paymentError) throw paymentError;
+        
+        if (!payments || payments.length === 0) {
             return res.status(400).json({ success: false, message: "User has not made payment" });
         }
         
-        const userResult = await pool.query("SELECT * FROM jambuser WHERE email = $1", [email]);
-        if (userResult.rows.length === 0) {
+        // Check if user exists
+        const { data: users, error: userError } = await supabase
+            .from('jambuser')
+            .select('*')
+            .eq('email', email);
+        
+        if (userError) throw userError;
+        
+        if (!users || users.length === 0) {
             return res.status(400).json({ success: false, message: "User not found" });
         }
         
-        await pool.query('UPDATE jambuser SET "activationCode" = $1 WHERE email = $2', [activationCode, email]);
+        // Update activation code
+        const { error: updateError } = await supabase
+            .from('jambuser')
+            .update({ activationCode: activationCode })
+            .eq('email', email);
         
+        if (updateError) throw updateError;
+        
+        // Send email
         const emailContent = `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <div style="background: linear-gradient(135deg, #1a237e 0%, #311b92 100%); padding: 30px; text-align: center;">
