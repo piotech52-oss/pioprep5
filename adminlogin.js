@@ -14,9 +14,7 @@ sgMail.setApiKey('SG.a-4FlLOwT4mi1KeHsAy-MA.3yxHdobFeHcz_8EZELVFxlDGQmq-M-faXqly
 
 // ========== SUPABASE POSTGRESQL CONNECTION ==========
 // Using Transaction Pooler with correct password
-const encodedPassword = encodeURIComponent('PioPrep2024!');
-const connectionString = `postgresql://postgres.vbpehelxdstkasscjiov:${encodedPassword}@aws-1-eu-west-1.pooler.supabase.com:6543/postgres`;
-
+const connectionString = 'postgresql://postgres.vbpehelxdstkasscjiov:PioPrep2024!@aws-1-eu-west-1.pooler.supabase.com:6543/postgres';
 console.log('🔧 Admin Database Connection:');
 console.log(`   Using Transaction Pooler: aws-1-eu-west-1.pooler.supabase.com:6543`);
 console.log(`   Encoded password: ${encodedPassword}`);
