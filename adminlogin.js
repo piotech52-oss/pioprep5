@@ -303,7 +303,7 @@ async function sendPaymentEmailNotification(paymentData) {
 
 // ========== ADMIN LOGIN ROUTES ==========
 
-// Admin login page
+// Admin login page - FIXED with password length display
 router.get("/admin/login", (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -311,38 +311,133 @@ router.get("/admin/login", (req, res) => {
         <head>
             <title>Admin Login</title>
             <style>
-                body { font-family: Arial; padding: 50px; text-align: center; 
+                body { 
+                    font-family: Arial; 
+                    padding: 50px; 
+                    text-align: center; 
                     background: linear-gradient(135deg, #1a237e 0%, #311b92 100%);
-                    height: 100vh; display: flex; justify-content: center; align-items: center; margin: 0; }
-                .login-box { background: white; padding: 40px; border-radius: 10px; 
-                    box-shadow: 0 15px 35px rgba(0,0,0,0.3); width: 100%; max-width: 400px; }
-                h1 { color: #1a237e; margin-bottom: 30px; }
-                input { width: 100%; padding: 12px; margin: 10px 0; border: 2px solid #ddd; 
-                    border-radius: 5px; font-size: 16px; box-sizing: border-box; }
-                button { width: 100%; padding: 12px; background: #1a237e; color: white; 
-                    border: none; border-radius: 5px; font-size: 16px; cursor: pointer; margin-top: 20px; }
-                button:hover { background: #311b92; }
-                .back { display: inline-block; margin-top: 20px; color: #1a237e; text-decoration: none; }
-                .credentials { margin-top: 20px; padding: 15px; background: #f8f9fa; 
-                    border-radius: 5px; font-size: 14px; text-align: left; }
-                .credentials code { background: #e9ecef; padding: 2px 6px; border-radius: 3px; }
-                .message { margin-top: 15px; padding: 10px; border-radius: 5px; }
-                .message.error { background: #f8d7da; color: #721c24; }
-                .message.success { background: #d4edda; color: #155724; }
-                .status { margin-top: 10px; padding: 8px; border-radius: 5px; font-size: 12px; }
-                .status.connected { background: #d4edda; color: #155724; }
-                .status.disconnected { background: #f8d7da; color: #721c24; }
+                    height: 100vh; 
+                    display: flex; 
+                    justify-content: center; 
+                    align-items: center; 
+                    margin: 0;
+                }
+                .login-box { 
+                    background: white; 
+                    padding: 40px; 
+                    border-radius: 10px; 
+                    box-shadow: 0 15px 35px rgba(0,0,0,0.3); 
+                    width: 100%; 
+                    max-width: 450px;
+                }
+                h1 { 
+                    color: #1a237e; 
+                    margin-bottom: 30px;
+                }
+                input { 
+                    width: 100%; 
+                    padding: 12px; 
+                    margin: 10px 0; 
+                    border: 2px solid #ddd; 
+                    border-radius: 5px; 
+                    font-size: 16px;
+                    box-sizing: border-box;
+                }
+                input:focus {
+                    outline: none;
+                    border-color: #1a237e;
+                }
+                button { 
+                    width: 100%; 
+                    padding: 12px; 
+                    background: #1a237e; 
+                    color: white; 
+                    border: none; 
+                    border-radius: 5px; 
+                    font-size: 16px; 
+                    cursor: pointer; 
+                    margin-top: 20px;
+                }
+                button:hover { 
+                    background: #311b92;
+                }
+                .back { 
+                    display: inline-block; 
+                    margin-top: 20px; 
+                    color: #1a237e; 
+                    text-decoration: none;
+                }
+                .credentials { 
+                    margin-top: 20px; 
+                    padding: 15px; 
+                    background: #f8f9fa; 
+                    border-radius: 5px; 
+                    font-size: 14px; 
+                    text-align: left;
+                }
+                .credentials code {
+                    background: #e9ecef;
+                    padding: 2px 6px;
+                    border-radius: 3px;
+                    word-break: break-all;
+                    font-size: 13px;
+                }
+                .message {
+                    margin-top: 15px;
+                    padding: 10px;
+                    border-radius: 5px;
+                }
+                .message.error {
+                    background: #f8d7da;
+                    color: #721c24;
+                    border: 1px solid #f5c6cb;
+                }
+                .message.success {
+                    background: #d4edda;
+                    color: #155724;
+                    border: 1px solid #c3e6cb;
+                }
+                .status {
+                    margin-top: 10px;
+                    padding: 8px;
+                    border-radius: 5px;
+                    font-size: 12px;
+                }
+                .status.connected {
+                    background: #d4edda;
+                    color: #155724;
+                }
+                .status.disconnected {
+                    background: #f8d7da;
+                    color: #721c24;
+                }
+                .debug-info {
+                    margin-top: 10px;
+                    font-size: 12px;
+                    color: #666;
+                    text-align: left;
+                    border-top: 1px solid #eee;
+                    padding-top: 10px;
+                }
+                .password-hint {
+                    font-size: 11px;
+                    color: #999;
+                    margin-top: -8px;
+                    margin-bottom: 10px;
+                    text-align: left;
+                }
             </style>
         </head>
         <body>
             <div class="login-box">
                 <h1>🔐 Admin Login</h1>
                 <div id="dbStatus" class="status">Checking database connection...</div>
-                <form id="loginForm">
-                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required>
+                <form id="loginForm" onsubmit="return false;">
+                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required value="piotech52@gmail.com">
                     <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
-                    <input type="text" id="securityCode" placeholder="Security Code" required>
-                    <button type="submit">Login</button>
+                    <div class="password-hint">Password should be: <strong>piotech@52gmail.com</strong> (21 characters)</div>
+                    <input type="text" id="securityCode" placeholder="Security Code" required value="piotech52@gmail.com">
+                    <button type="submit" id="loginBtn">Login</button>
                 </form>
                 <div id="message"></div>
                 <div class="credentials">
@@ -351,9 +446,28 @@ router.get("/admin/login", (req, res) => {
                     Password: <code>piotech@52gmail.com</code><br>
                     Security Code: <code>piotech52@gmail.com</code>
                 </div>
+                <div class="debug-info">
+                    Password length: <span id="passwordLength">0</span> characters<br>
+                    Expected: 21 characters
+                </div>
                 <a href="/" class="back">← Back to Home</a>
             </div>
             <script>
+                // Show password length as you type
+                const passwordInput = document.getElementById('password');
+                const passwordLengthSpan = document.getElementById('passwordLength');
+                
+                passwordInput.addEventListener('input', function() {
+                    passwordLengthSpan.textContent = this.value.length;
+                    if (this.value.length === 21) {
+                        passwordLengthSpan.style.color = 'green';
+                        passwordLengthSpan.style.fontWeight = 'bold';
+                    } else {
+                        passwordLengthSpan.style.color = 'red';
+                        passwordLengthSpan.style.fontWeight = 'normal';
+                    }
+                });
+                
                 async function checkDBStatus() {
                     try {
                         const response = await fetch('/api/admin/debug-db');
@@ -377,10 +491,18 @@ router.get("/admin/login", (req, res) => {
                 
                 document.getElementById('loginForm').addEventListener('submit', async (e) => {
                     e.preventDefault();
+                    
                     const username = document.getElementById('username').value.trim();
                     const password = document.getElementById('password').value;
                     const securityCode = document.getElementById('securityCode').value.trim();
                     const messageDiv = document.getElementById('message');
+                    const loginBtn = document.getElementById('loginBtn');
+                    
+                    console.log('Login attempt:', { 
+                        username, 
+                        passwordLength: password.length, 
+                        securityCode 
+                    });
                     
                     if (!username || !password || !securityCode) {
                         messageDiv.textContent = 'All fields are required';
@@ -388,17 +510,30 @@ router.get("/admin/login", (req, res) => {
                         return;
                     }
                     
+                    if (password.length !== 21) {
+                        messageDiv.textContent = 'Password must be exactly 21 characters. Full password: piotech@52gmail.com';
+                        messageDiv.className = 'message error';
+                        return;
+                    }
+                    
                     messageDiv.textContent = 'Logging in...';
                     messageDiv.className = 'message success';
+                    loginBtn.disabled = true;
+                    loginBtn.textContent = 'Logging in...';
                     
                     try {
                         const response = await fetch('/api/auth/login', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ username, password, security_code: securityCode })
+                            body: JSON.stringify({ 
+                                username: username, 
+                                password: password, 
+                                security_code: securityCode 
+                            })
                         });
                         
                         const data = await response.json();
+                        console.log('Login response:', data);
                         
                         if (data.success) {
                             messageDiv.textContent = 'Login successful! Redirecting...';
@@ -408,11 +543,15 @@ router.get("/admin/login", (req, res) => {
                         } else {
                             messageDiv.textContent = data.message || 'Login failed';
                             messageDiv.className = 'message error';
+                            loginBtn.disabled = false;
+                            loginBtn.textContent = 'Login';
                         }
                     } catch (error) {
                         messageDiv.textContent = 'Connection error. Please try again.';
                         messageDiv.className = 'message error';
                         console.error('Login error:', error);
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = 'Login';
                     }
                 });
             </script>
@@ -426,6 +565,7 @@ router.post("/api/auth/login", async (req, res) => {
     const { username, password, security_code } = req.body;
     
     console.log('🔐 Admin login attempt:', username);
+    console.log('   Password length:', password ? password.length : 0);
 
     if (!supabase || !dbConnected) {
         console.log('❌ Database not connected');
@@ -459,15 +599,18 @@ router.post("/api/auth/login", async (req, res) => {
         }
 
         if (!admins || admins.length === 0) {
+            console.log('   Admin user not found');
             return res.status(401).json({
                 success: false,
-                message: 'Invalid credentials'
+                message: 'Invalid credentials - User not found'
             });
         }
 
         const admin = admins[0];
+        console.log('   Found admin:', admin.email);
         
         if (admin.security_code !== security_code) {
+            console.log('   Security code mismatch');
             return res.status(401).json({
                 success: false,
                 message: 'Invalid security code'
@@ -475,6 +618,7 @@ router.post("/api/auth/login", async (req, res) => {
         }
 
         const isPasswordValid = await bcrypt.compare(password, admin.password);
+        console.log('   Password valid:', isPasswordValid);
         
         if (!isPasswordValid) {
             return res.status(401).json({
@@ -529,7 +673,7 @@ router.post("/api/auth/logout", (req, res) => {
     });
 });
 
-// ========== DEBUG ROUTE ==========
+// ========== DEBUG ROUTES ==========
 router.get("/api/admin/debug-db", async (req, res) => {
     res.json({
         supabaseAvailable: !!supabase,
@@ -541,6 +685,50 @@ router.get("/api/admin/debug-db", async (req, res) => {
     });
 });
 
+// Debug route to check admin user
+router.get("/api/admin/check-admin", async (req, res) => {
+    if (!supabase || !dbConnected) {
+        return res.json({ success: false, message: 'Database not connected' });
+    }
+    
+    try {
+        const { data: admins, error } = await supabase
+            .from('admin_users')
+            .select('id, username, email, role, is_active, password')
+            .eq('email', 'piotech52@gmail.com');
+        
+        if (error) {
+            return res.json({ success: false, error: error.message });
+        }
+        
+        if (!admins || admins.length === 0) {
+            return res.json({ success: false, message: 'Admin user not found' });
+        }
+        
+        const admin = admins[0];
+        
+        // Test password verification
+        const testPassword = 'piotech@52gmail.com';
+        const isValid = await bcrypt.compare(testPassword, admin.password);
+        
+        res.json({
+            success: true,
+            adminExists: true,
+            email: admin.email,
+            role: admin.role,
+            is_active: admin.is_active,
+            passwordHashLength: admin.password.length,
+            passwordVerification: {
+                testPassword: testPassword,
+                isValid: isValid
+            },
+            message: isValid ? 'Password is correct!' : 'Password hash does not match!'
+        });
+    } catch (err) {
+        res.json({ success: false, error: err.message });
+    }
+});
+
 // ========== STATISTICS API - USING SUPABASE ==========
 router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
     if (!supabase || !dbConnected) {
@@ -549,17 +737,17 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
     
     try {
         // Get total users
-        const { count: totalUsers, error: totalError } = await supabase
+        const { count: totalUsers } = await supabase
             .from('jambuser')
             .select('*', { count: 'exact', head: true });
         
         // Get total payments
-        const { count: totalPayments, error: paymentError } = await supabase
+        const { count: totalPayments } = await supabase
             .from('user_payments')
             .select('*', { count: 'exact', head: true });
         
         // Get total revenue
-        const { data: revenueData, error: revenueError } = await supabase
+        const { data: revenueData } = await supabase
             .from('user_payments')
             .select('amount')
             .eq('status', 'completed');
@@ -567,7 +755,7 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
         const totalRevenue = revenueData?.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0) || 0;
         
         // Get unread notifications
-        const { count: unreadNotifications, error: notifError } = await supabase
+        const { count: unreadNotifications } = await supabase
             .from('payment_notifications')
             .select('*', { count: 'exact', head: true })
             .eq('is_read', 0);
@@ -755,7 +943,7 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
                     const response = await fetch('/api/admin/users');
                     const data = await response.json();
                     if (data.success) {
-                        let html = ' 60% <th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th> </tr>';
+                        let html = '<table><tr><th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th></tr>';
                         data.users.forEach(user => {
                             const isActive = user.is_activated === '1';
                             html += \`
@@ -770,7 +958,7 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
                                             '<button class="btn btn-activate" onclick="activateUser(' + user.id + ')">Activate</button>' : 
                                             '<button class="btn btn-deactivate" onclick="deactivateUser(' + user.id + ')">Deactivate</button>'
                                         }
-                                    </td>
+                                    </div>
                                 </tr>
                             \`;
                         });
@@ -885,7 +1073,7 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
                     const response = await fetch('/api/admin/payments');
                     const data = await response.json();
                     if (data.success && data.payments) {
-                        let html = ' aplenty <th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th>  </tr>';
+                        let html = '<table><tr><th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th></tr>';
                         data.payments.forEach(p => {
                             html += \`<tr><td>\${p.userName || p.email}</td><td>₦\${p.amount}</td><td>\${p.payment_method}</td><td>\${p.status}</td><td>\${new Date(p.created_at).toLocaleDateString()}</td></tr>\`;
                         });
