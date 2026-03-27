@@ -3,7 +3,6 @@ const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
-const nodemailer = require('nodemailer');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -14,12 +13,12 @@ const sgMail = require('@sendgrid/mail');
 sgMail.setApiKey('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');
 
 // ========== SUPABASE POSTGRESQL CONNECTION ==========
-// FIXED: Using the correct password PioPrep2024! with URL encoding
+// Using Transaction Pooler with correct password
 const encodedPassword = encodeURIComponent('PioPrep2024!');
 const connectionString = `postgresql://postgres.vbpehelxdstkasscjiov:${encodedPassword}@aws-1-eu-west-1.pooler.supabase.com:6543/postgres`;
 
 console.log('🔧 Admin Database Connection:');
-console.log(`   Using password: PioPrep2024!`);
+console.log(`   Using Transaction Pooler: aws-1-eu-west-1.pooler.supabase.com:6543`);
 console.log(`   Encoded password: ${encodedPassword}`);
 
 const pool = new Pool({
@@ -41,23 +40,24 @@ let connectionChecked = false;
 async function testDatabaseConnection() {
     let client;
     try {
+        console.log('🔌 Connecting to Supabase Transaction Pooler...');
         client = await pool.connect();
         console.log('✅ Admin DB connected to Supabase PostgreSQL!');
         dbConnected = true;
         connectionChecked = true;
         
-        // Test a simple query
-        await client.query('SELECT 1');
-        console.log('✅ Admin database queries working');
+        // Test query
+        const result = await client.query('SELECT NOW() as current_time');
+        console.log('✅ Database query successful!');
         
         client.release();
         
-        // Create tables if they don't exist
+        // Create tables
         await createAdminTable();
         
         return true;
     } catch (err) {
-        console.error('❌ Error connecting admin to Supabase PostgreSQL:', err.message);
+        console.error('❌ Error connecting to Supabase:', err.message);
         dbConnected = false;
         connectionChecked = true;
         if (client) client.release();
@@ -80,7 +80,6 @@ router.use((req, res, next) => {
 
 // ========== ADMIN TABLES SETUP ==========
 
-// Create admin table
 async function createAdminTable() {
     if (!dbConnected) return;
     
@@ -111,7 +110,6 @@ async function createAdminTable() {
     }
 }
 
-// Create payment notifications table
 async function createPaymentNotificationsTable() {
     if (!dbConnected) return;
     
@@ -140,7 +138,6 @@ async function createPaymentNotificationsTable() {
     }
 }
 
-// Create default admin user
 async function createDefaultAdmin() {
     if (!dbConnected) return;
     
@@ -247,50 +244,19 @@ async function sendPaymentEmailNotification(paymentData) {
                     <p>A new payment has been received on JAMB Prep platform:</p>
                     
                     <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0;">
-                        <table style="width: 100%; border-collapse: collapse;">
-                               <tr>
-                                <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;"><strong>Payment ID:</strong></td>
-                                <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;">${payment_id}</td>
-                               </tr>
-                               <tr>
-                                <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;"><strong>User Email:</strong></td>
-                                <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;">${user_email}</td>
-                               </tr>
-                               <tr>
-                                <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;"><strong>Amount:</strong></td>
-                                <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;">${currency} ${amount}</td>
-                               </tr>
-                               <tr>
-                                <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;"><strong>Payment Method:</strong></td>
-                                <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;">${payment_method}</td>
-                               </tr>
-                               <tr>
-                                <td style="padding: 10px;"><strong>Note:</strong></td>
-                                <td style="padding: 10px;">${note || 'No note provided'}</td>
-                               </tr>
-                           </table>
-                    </div>
-                    
-                    <div style="margin-top: 30px; padding: 15px; background: #e8f4fd; border-radius: 8px; border-left: 4px solid #3498db;">
-                        <p style="margin: 0; color: #2c3e50;">
-                            <strong>Action Required:</strong> Please log in to the admin dashboard to view complete details and process this payment.
-                        </p>
+                        <p><strong>Payment ID:</strong> ${payment_id}</p>
+                        <p><strong>User Email:</strong> ${user_email}</p>
+                        <p><strong>Amount:</strong> ${currency} ${amount}</p>
+                        <p><strong>Payment Method:</strong> ${payment_method}</p>
+                        <p><strong>Note:</strong> ${note || 'No note provided'}</p>
                     </div>
                     
                     <div style="margin-top: 30px; text-align: center;">
                         <a href="/admin/dashboard" 
-                           style="display: inline-block; background: #1a237e; color: white; padding: 15px 30px; 
-                                  text-decoration: none; border-radius: 5px; font-weight: bold;">
+                           style="display: inline-block; background: #1a237e; color: white; padding: 10px 20px; 
+                                  text-decoration: none; border-radius: 5px;">
                             Go to Admin Dashboard
                         </a>
-                    </div>
-                    
-                    <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
-                        <p style="color: #666; font-size: 0.9rem;">
-                            This is an automated notification. Please do not reply to this email.<br>
-                            Best regards,<br>
-                            The JAMB Prep System
-                        </p>
                     </div>
                 </div>
             </div>
@@ -340,11 +306,15 @@ router.get("/admin/login", (req, res) => {
                 .message { margin-top: 15px; padding: 10px; border-radius: 5px; }
                 .message.error { background: #f8d7da; color: #721c24; }
                 .message.success { background: #d4edda; color: #155724; }
+                .status { margin-top: 10px; padding: 8px; border-radius: 5px; font-size: 12px; }
+                .status.connected { background: #d4edda; color: #155724; }
+                .status.disconnected { background: #f8d7da; color: #721c24; }
             </style>
         </head>
         <body>
             <div class="login-box">
                 <h1>🔐 Admin Login</h1>
+                <div id="dbStatus" class="status">Checking database connection...</div>
                 <form id="loginForm">
                     <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required>
                     <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
@@ -361,12 +331,39 @@ router.get("/admin/login", (req, res) => {
                 <a href="/" class="back">← Back to Home</a>
             </div>
             <script>
+                async function checkDBStatus() {
+                    try {
+                        const response = await fetch('/api/admin/debug-db');
+                        const data = await response.json();
+                        const statusDiv = document.getElementById('dbStatus');
+                        if (data.dbConnected) {
+                            statusDiv.innerHTML = '✅ Database: Connected';
+                            statusDiv.className = 'status connected';
+                        } else {
+                            statusDiv.innerHTML = '❌ Database: Not Connected - Check server logs';
+                            statusDiv.className = 'status disconnected';
+                        }
+                    } catch (error) {
+                        document.getElementById('dbStatus').innerHTML = '❌ Cannot connect to server';
+                        document.getElementById('dbStatus').className = 'status disconnected';
+                    }
+                }
+                
+                checkDBStatus();
+                setInterval(checkDBStatus, 5000);
+                
                 document.getElementById('loginForm').addEventListener('submit', async (e) => {
                     e.preventDefault();
                     const username = document.getElementById('username').value.trim();
                     const password = document.getElementById('password').value;
                     const securityCode = document.getElementById('securityCode').value.trim();
                     const messageDiv = document.getElementById('message');
+                    
+                    if (!username || !password || !securityCode) {
+                        messageDiv.textContent = 'All fields are required';
+                        messageDiv.className = 'message error';
+                        return;
+                    }
                     
                     messageDiv.textContent = 'Logging in...';
                     messageDiv.className = 'message success';
@@ -435,13 +432,6 @@ router.post("/api/auth/login", async (req, res) => {
 
         const admin = result.rows[0];
         
-        if (admin.role === 'user') {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
-        }
-        
         if (admin.security_code !== security_code) {
             return res.status(401).json({
                 success: false,
@@ -486,12 +476,7 @@ router.post("/api/auth/login", async (req, res) => {
         });
         
     } catch (error) {
-        console.error('❌ Login error details:', {
-            message: error.message,
-            code: error.code,
-            hint: error.hint
-        });
-        
+        console.error('❌ Login error:', error);
         res.status(500).json({
             success: false,
             message: 'Server error: ' + error.message
@@ -509,7 +494,7 @@ router.post("/api/auth/logout", (req, res) => {
     });
 });
 
-// ========== DEBUG ROUTES ==========
+// ========== DEBUG ROUTE ==========
 router.get("/api/admin/debug-db", async (req, res) => {
     res.json({
         dbConnected: dbConnected,
@@ -518,30 +503,34 @@ router.get("/api/admin/debug-db", async (req, res) => {
     });
 });
 
-router.get("/api/admin/check-user", async (req, res) => {
+// ========== STATISTICS API ==========
+router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
     if (!dbConnected) {
-        return res.json({ success: false, message: 'Database not connected' });
+        return res.status(503).json({ success: false, message: 'Database unavailable' });
     }
     
     try {
-        const query = "SELECT id, username, email, role, is_active FROM admin_users WHERE email = $1";
-        const result = await pool.query(query, ['piotech52@gmail.com']);
-        
-        if (result.rows.length === 0) {
-            return res.json({ success: false, message: 'Admin user not found' });
-        }
+        const totalUsers = await pool.query("SELECT COUNT(*) as count FROM jambuser");
+        const totalPayments = await pool.query("SELECT COUNT(*) as count FROM user_payments");
+        const totalRevenue = await pool.query("SELECT COALESCE(SUM(amount), 0) as total FROM user_payments WHERE status = 'completed'");
+        const unreadNotifications = await pool.query("SELECT COUNT(*) as count FROM payment_notifications WHERE is_read = 0");
         
         res.json({
             success: true,
-            adminExists: true,
-            admin: result.rows[0]
+            statistics: {
+                totalUsers: { count: parseInt(totalUsers.rows[0]?.count) || 0 },
+                totalPayments: { count: parseInt(totalPayments.rows[0]?.count) || 0 },
+                totalRevenue: { total: parseFloat(totalRevenue.rows[0]?.total) || 0 },
+                unreadNotifications: { count: parseInt(unreadNotifications.rows[0]?.count) || 0 }
+            }
         });
-    } catch (err) {
-        res.json({ success: false, error: err.message });
+    } catch (error) {
+        console.error('Error fetching statistics:', error);
+        res.status(500).json({ success: false, message: 'Database error' });
     }
 });
 
-// ========== ADMIN DASHBOARD ==========
+// ========== SIMPLE DASHBOARD ==========
 router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -552,10 +541,10 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
                 body { font-family: Arial; margin: 0; padding: 20px; background: #f5f5f5; }
                 .header { background: #1a237e; color: white; padding: 20px; margin-bottom: 20px; border-radius: 5px; }
                 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 20px; }
-                .stat-card { background: white; padding: 20px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); text-align: center; }
+                .stat-card { background: white; padding: 20px; border-radius: 5px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
                 .stat-value { font-size: 32px; font-weight: bold; color: #1a237e; }
                 .actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 20px; }
-                .action-btn { background: white; padding: 20px; text-align: center; border-radius: 5px; text-decoration: none; color: #333; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+                .action-btn { background: white; padding: 20px; text-align: center; border-radius: 5px; text-decoration: none; color: #333; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; display: block; }
                 .action-btn:hover { background: #1a237e; color: white; transform: translateY(-2px); }
                 .logout-btn { background: #e74c3c; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; float: right; }
                 .logout-btn:hover { background: #c0392b; }
@@ -600,10 +589,10 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
                     <h3>📚 Question Management</h3>
                     <p>Manage JAMB questions</p>
                 </a>
-                <button class="action-btn" onclick="sendActivation()">
+                <div class="action-btn" onclick="sendActivation()">
                     <h3>🔑 Send Activation</h3>
                     <p>Send activation code</p>
-                </button>
+                </div>
             </div>
             
             <script>
@@ -631,12 +620,8 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
                             body: JSON.stringify({ email })
                         })
                         .then(res => res.json())
-                        .then(data => {
-                            alert(data.message || 'Activation code sent!');
-                        })
-                        .catch(err => {
-                            alert('Error sending activation code');
-                        });
+                        .then(data => alert(data.message || 'Activation code sent!'))
+                        .catch(err => alert('Error sending activation code'));
                     }
                 }
                 
@@ -653,126 +638,12 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
     `);
 });
 
-// ========== STATISTICS API ==========
-router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) {
-        return res.status(503).json({ success: false, message: 'Database unavailable' });
-    }
-    
-    const queries = {
-        totalUsers: "SELECT COUNT(*) as count FROM jambuser",
-        totalPayments: "SELECT COUNT(*) as count FROM user_payments",
-        totalRevenue: "SELECT COALESCE(SUM(amount), 0) as total FROM user_payments WHERE status = 'completed'",
-        unreadNotifications: "SELECT COUNT(*) as count FROM payment_notifications WHERE is_read = 0"
-    };
-    
-    const results = {};
-    
-    try {
-        for (const [key, query] of Object.entries(queries)) {
-            try {
-                const result = await pool.query(query);
-                if (key === 'totalRevenue') {
-                    results[key] = { total: parseFloat(result.rows[0]?.total) || 0 };
-                } else {
-                    results[key] = { count: parseInt(result.rows[0]?.count) || 0 };
-                }
-            } catch (err) {
-                if (key === 'totalRevenue') {
-                    results[key] = { total: 0 };
-                } else {
-                    results[key] = { count: 0 };
-                }
-            }
-        }
-        
-        res.json({ success: true, statistics: results });
-    } catch (error) {
-        console.error('Error fetching statistics:', error);
-        res.status(500).json({ success: false, message: 'Database error' });
-    }
-});
-
-// ========== ACTIVATION CODE ROUTE ==========
-router.post("/send", async (req, res) => {
-    if (!req.session || !req.session.adminLoggedIn) {
-        return res.status(401).json({ success: false, message: "Unauthorized" });
-    }
-    
-    if (!dbConnected) {
-        return res.status(503).json({ success: false, message: 'Database unavailable' });
-    }
-    
-    function generateActivationCode() {
-        return Math.floor(100000 + Math.random() * 900000).toString();
-    }
-
-    const { email } = req.body;
-    const activationCode = generateActivationCode();
-    
-    try {
-        const paymentResult = await pool.query("SELECT * FROM user_payments WHERE email = $1", [email]);
-        if (paymentResult.rows.length === 0) {
-            return res.status(400).json({ success: false, message: "User has not made payment" });
-        }
-        
-        const userResult = await pool.query("SELECT * FROM jambuser WHERE email = $1", [email]);
-        if (userResult.rows.length === 0) {
-            return res.status(400).json({ success: false, message: "User not found. Please register first." });
-        }
-        
-        await pool.query('UPDATE jambuser SET "activationCode" = $1 WHERE email = $2', [activationCode, email]);
-        
-        const emailContent = `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <div style="background: linear-gradient(135deg, #1a237e 0%, #311b92 100%); padding: 30px; text-align: center;">
-                    <h1 style="color: white; margin: 0;">🎯 JAMB Prep</h1>
-                </div>
-                <div style="padding: 30px; background: white;">
-                    <h2 style="color: #1a237e;">Your Activation Code</h2>
-                    <p>Hello,</p>
-                    <p>Thank you for registering with JAMB Prep. Here is your activation code:</p>
-                    <div style="background: #f8f9fa; padding: 20px; text-align: center; margin: 20px 0; border-radius: 10px; border: 2px dashed #1a237e;">
-                        <div style="font-size: 2.5rem; font-weight: bold; color: #1a237e; letter-spacing: 5px;">
-                            ${activationCode}
-                        </div>
-                    </div>
-                    <p>Use this code to activate your account and access all features.</p>
-                    <p>If you didn't request this code, please ignore this email.</p>
-                    <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
-                        <p style="color: #666; font-size: 0.9rem;">
-                            Best regards,<br>
-                            The JAMB Prep Team
-                        </p>
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        const msg = {
-            to: email,
-            from: 'piotech52@gmail.com',
-            subject: "Your JAMB Prep Activation Code",
-            html: emailContent
-        };
-        
-        await sgMail.send(msg);
-        
-        res.json({ success: true, message: 'Activation code sent successfully' });
-    } catch (error) {
-        console.error('General error:', error);
-        res.status(500).json({ success: false, message: "Server error" });
-    }
-});
-
-// ========== USER MANAGEMENT ROUTES ==========
+// ========== USER MANAGEMENT ==========
 router.get("/api/admin/users", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) {
-        return res.status(503).json({ success: false, message: 'Database unavailable' });
-    }
+    if (!dbConnected) return res.status(503).json({ success: false, message: 'Database unavailable' });
     
     try {
-        const usersResult = await pool.query(`
+        const users = await pool.query(`
             SELECT id, "userName", email, role, is_activated, "activationCode", created_at 
             FROM jambuser ORDER BY created_at DESC
         `);
@@ -784,7 +655,7 @@ router.get("/api/admin/users", checkAdminAuth, async (req, res) => {
             paidUsers: (await pool.query("SELECT COUNT(DISTINCT email) as count FROM user_payments WHERE status = 'completed'")).rows[0]?.count || 0
         };
         
-        res.json({ success: true, users: usersResult.rows, stats: stats });
+        res.json({ success: true, users: users.rows, stats: stats });
     } catch (err) {
         console.error('Error fetching users:', err);
         res.status(500).json({ success: false, message: 'Database error' });
@@ -873,8 +744,8 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
 router.post("/api/admin/users/:id/activate", checkAdminAuth, async (req, res) => {
     if (!dbConnected) return res.status(503).json({ success: false });
     try {
-        const result = await pool.query(`UPDATE jambuser SET is_activated = '1' WHERE id = $1 RETURNING id`, [req.params.id]);
-        res.json({ success: true, user: result.rows[0] });
+        await pool.query(`UPDATE jambuser SET is_activated = '1' WHERE id = $1`, [req.params.id]);
+        res.json({ success: true });
     } catch (err) {
         res.status(500).json({ success: false });
     }
@@ -883,14 +754,14 @@ router.post("/api/admin/users/:id/activate", checkAdminAuth, async (req, res) =>
 router.post("/api/admin/users/:id/deactivate", checkAdminAuth, async (req, res) => {
     if (!dbConnected) return res.status(503).json({ success: false });
     try {
-        const result = await pool.query(`UPDATE jambuser SET is_activated = '0' WHERE id = $1 RETURNING id`, [req.params.id]);
-        res.json({ success: true, user: result.rows[0] });
+        await pool.query(`UPDATE jambuser SET is_activated = '0' WHERE id = $1`, [req.params.id]);
+        res.json({ success: true });
     } catch (err) {
         res.status(500).json({ success: false });
     }
 });
 
-// ========== PAYMENT MANAGEMENT ROUTES ==========
+// ========== PAYMENT MANAGEMENT ==========
 router.get("/api/admin/payments", checkAdminAuth, async (req, res) => {
     if (!dbConnected) return res.status(503).json({ success: false });
     try {
@@ -926,7 +797,7 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
                     const response = await fetch('/api/admin/payments');
                     const data = await response.json();
                     if (data.success && data.payments) {
-                        let html = ' <table><tr><th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th></tr>';
+                        let html = '<table><tr><th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th></tr>';
                         data.payments.forEach(p => {
                             html += \`<tr><td>\${p.userName || p.email}</td><td>₦\${p.amount}</td><td>\${p.payment_method}</td><td>\${p.status}</td><td>\${new Date(p.created_at).toLocaleDateString()}</td></tr>\`;
                         });
@@ -941,15 +812,74 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
     `);
 });
 
-// ========== QUESTION MANAGEMENT ROUTES ==========
+// ========== ACTIVATION CODE ROUTE ==========
+router.post("/send", async (req, res) => {
+    if (!req.session || !req.session.adminLoggedIn) {
+        return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    
+    if (!dbConnected) {
+        return res.status(503).json({ success: false, message: 'Database unavailable' });
+    }
+    
+    function generateActivationCode() {
+        return Math.floor(100000 + Math.random() * 900000).toString();
+    }
+
+    const { email } = req.body;
+    const activationCode = generateActivationCode();
+    
+    try {
+        const paymentResult = await pool.query("SELECT * FROM user_payments WHERE email = $1", [email]);
+        if (paymentResult.rows.length === 0) {
+            return res.status(400).json({ success: false, message: "User has not made payment" });
+        }
+        
+        const userResult = await pool.query("SELECT * FROM jambuser WHERE email = $1", [email]);
+        if (userResult.rows.length === 0) {
+            return res.status(400).json({ success: false, message: "User not found" });
+        }
+        
+        await pool.query('UPDATE jambuser SET "activationCode" = $1 WHERE email = $2', [activationCode, email]);
+        
+        const emailContent = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <div style="background: linear-gradient(135deg, #1a237e 0%, #311b92 100%); padding: 30px; text-align: center;">
+                    <h1 style="color: white;">🎯 JAMB Prep</h1>
+                </div>
+                <div style="padding: 30px;">
+                    <h2>Your Activation Code</h2>
+                    <p>Hello,</p>
+                    <p>Here is your activation code:</p>
+                    <div style="background: #f0f0f0; padding: 20px; text-align: center; font-size: 24px; font-weight: bold;">
+                        ${activationCode}
+                    </div>
+                    <p>Use this code to activate your account.</p>
+                </div>
+            </div>
+        `;
+        
+        await sgMail.send({
+            to: email,
+            from: 'piotech52@gmail.com',
+            subject: "Your JAMB Prep Activation Code",
+            html: emailContent
+        });
+        
+        res.json({ success: true, message: 'Activation code sent successfully' });
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+});
+
+// ========== QUESTION MANAGEMENT ==========
 router.get("/admin/questions", checkAdminAuth, (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html>
         <head><title>Question Management</title>
-        <style>
-            body { font-family: Arial; padding: 20px; background: #f5f5f5; }
-        </style>
+        <style>body{font-family:Arial;padding:20px;background:#f5f5f5;}</style>
         </head>
         <body>
             <h1>📚 Question Management</h1>
@@ -961,8 +891,7 @@ router.get("/admin/questions", checkAdminAuth, (req, res) => {
 });
 
 router.get("/api/admin/check-access", (req, res) => {
-    const isAdmin = req.session && req.session.adminLoggedIn;
-    res.json({ success: true, isAdmin: isAdmin });
+    res.json({ success: true, isAdmin: req.session?.adminLoggedIn || false });
 });
 
 module.exports = router;
