@@ -13,13 +13,12 @@ const sgMail = require('@sendgrid/mail');
 sgMail.setApiKey('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');
 
 // ========== SUPABASE POSTGRESQL CONNECTION ==========
-// Using Transaction Pooler with correct password
-const encodedPassword = encodeURIComponent('PioPrep2024!');
-const connectionString = `postgresql://postgres.vbpehelxdstkasscjiov:${encodedPassword}@aws-1-eu-west-1.pooler.supabase.com:6543/postgres`;
+// Direct connection string with password PioPrep2024!
+const connectionString = 'postgresql://postgres.vbpehelxdstkasscjiov:PioPrep2024!@aws-1-eu-west-1.pooler.supabase.com:6543/postgres';
 
 console.log('🔧 Admin Database Connection:');
 console.log(`   Using Transaction Pooler: aws-1-eu-west-1.pooler.supabase.com:6543`);
-console.log(`   Encoded password: ${encodedPassword}`);
+console.log(`   Password: PioPrep2024!`);
 
 const pool = new Pool({
     connectionString: connectionString,
@@ -530,7 +529,7 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
     }
 });
 
-// ========== SIMPLE DASHBOARD ==========
+// ========== DASHBOARD ==========
 router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -688,7 +687,7 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
                     const response = await fetch('/api/admin/users');
                     const data = await response.json();
                     if (data.success) {
-                        let html = '<table><tr><th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th></tr>';
+                        let html = ' <table> <tr><th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th></tr>';
                         data.users.forEach(user => {
                             const isActive = user.is_activated === '1';
                             html += \`
@@ -797,7 +796,7 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
                     const response = await fetch('/api/admin/payments');
                     const data = await response.json();
                     if (data.success && data.payments) {
-                        let html = '<table><tr><th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th></tr>';
+                        let html = ' <table> <tr><th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th></tr>';
                         data.payments.forEach(p => {
                             html += \`<tr><td>\${p.userName || p.email}</td><td>₦\${p.amount}</td><td>\${p.payment_method}</td><td>\${p.status}</td><td>\${new Date(p.created_at).toLocaleDateString()}</td></tr>\`;
                         });
@@ -842,7 +841,7 @@ router.post("/send", async (req, res) => {
         
         await pool.query('UPDATE jambuser SET "activationCode" = $1 WHERE email = $2', [activationCode, email]);
         
-        const emailContent = `
+        const emailContent = \`
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <div style="background: linear-gradient(135deg, #1a237e 0%, #311b92 100%); padding: 30px; text-align: center;">
                     <h1 style="color: white;">🎯 JAMB Prep</h1>
@@ -852,12 +851,12 @@ router.post("/send", async (req, res) => {
                     <p>Hello,</p>
                     <p>Here is your activation code:</p>
                     <div style="background: #f0f0f0; padding: 20px; text-align: center; font-size: 24px; font-weight: bold;">
-                        ${activationCode}
+                        \${activationCode}
                     </div>
                     <p>Use this code to activate your account.</p>
                 </div>
             </div>
-        `;
+        \`;
         
         await sgMail.send({
             to: email,
