@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { Pool } = require('pg'); // PostgreSQL
+const { Pool } = require('pg');
 const nodemailer = require('nodemailer');
 const multer = require('multer');
 const path = require('path');
@@ -14,8 +14,12 @@ const sgMail = require('@sendgrid/mail');
 sgMail.setApiKey('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');
 
 // ========== SUPABASE POSTGRESQL CONNECTION ==========
+// Fix: URL encode the password with special characters
+const encodedPassword = encodeURIComponent('PioPrep2024!');
+const connectionString = process.env.DATABASE_URL || `postgresql://postgres.vbpehelxdstkasscjiov:${encodedPassword}@aws-1-eu-west-1.pooler.supabase.com:6543/postgres`;
+
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://postgres.vbpehelxdstkasscjiov:PioPrep2024!@aws-1-eu-west-1.pooler.supabase.com:6543/postgres',
+    connectionString: connectionString,
     ssl: {
         rejectUnauthorized: false,
         sslmode: 'require'
@@ -31,16 +35,18 @@ let connectionChecked = false;
 
 // Test database connection
 async function testDatabaseConnection() {
+    let client;
     try {
-        const client = await pool.connect();
+        client = await pool.connect();
         console.log('✅ Admin DB connected to Supabase PostgreSQL!');
         dbConnected = true;
         connectionChecked = true;
-        client.release();
         
         // Test a simple query
         await client.query('SELECT 1');
         console.log('✅ Admin database queries working');
+        
+        client.release();
         
         // Create tables if they don't exist
         await createAdminTable();
@@ -50,6 +56,7 @@ async function testDatabaseConnection() {
         console.error('❌ Error connecting admin to Supabase PostgreSQL:', err.message);
         dbConnected = false;
         connectionChecked = true;
+        if (client) client.release();
         return false;
     }
 }
@@ -240,27 +247,27 @@ async function sendPaymentEmailNotification(paymentData) {
                     
                     <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0;">
                         <table style="width: 100%; border-collapse: collapse;">
-                              <tr>
+                               <tr>
                                 <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;"><strong>Payment ID:</strong></td>
                                 <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;">${payment_id}</td>
-                              </tr>
-                              <tr>
+                               </tr>
+                               <tr>
                                 <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;"><strong>User Email:</strong></td>
                                 <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;">${user_email}</td>
-                              </tr>
-                              <tr>
+                               </tr>
+                               <tr>
                                 <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;"><strong>Amount:</strong></td>
                                 <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;">${currency} ${amount}</td>
-                              </tr>
-                              <tr>
+                               </tr>
+                               <tr>
                                 <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;"><strong>Payment Method:</strong></td>
                                 <td style="padding: 10px; border-bottom: 1px solid #e0e0e0;">${payment_method}</td>
-                              </tr>
-                              <tr>
+                               </tr>
+                               <tr>
                                 <td style="padding: 10px;"><strong>Note:</strong></td>
                                 <td style="padding: 10px;">${note || 'No note provided'}</td>
-                              </tr>
-                        </table>
+                               </tr>
+                         </table>
                     </div>
                     
                     <div style="margin-top: 30px; padding: 15px; background: #e8f4fd; border-radius: 8px; border-left: 4px solid #3498db;">
@@ -270,7 +277,7 @@ async function sendPaymentEmailNotification(paymentData) {
                     </div>
                     
                     <div style="margin-top: 30px; text-align: center;">
-                        <a href="http://localhost:3000/admin/dashboard" 
+                        <a href="/admin/dashboard" 
                            style="display: inline-block; background: #1a237e; color: white; padding: 15px 30px; 
                                   text-decoration: none; border-radius: 5px; font-weight: bold;">
                             Go to Admin Dashboard
@@ -1362,8 +1369,8 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
                             </div>
                             <div class="table-container">
                                 <table class="payments-table">
-                                    <thead><tr><th>User</th><th>Payment ID</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th></tr></thead>
-                                    <tbody id="recentPayments"><tr><td colspan="6" style="text-align: center; padding: 50px;"><div style="display: inline-block; width: 40px; height: 40px; border: 3px solid #f3f3f3; border-top: 3px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite;"></div><p style="margin-top: 15px; color: var(--gray);">Loading payments...</p></td></tr></tbody>
+                                    <thead> transduction<th>User</th><th>Payment ID</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th> </tr</thead>
+                                    <tbody id="recentPayments"> <tr<td colspan="6" style="text-align: center; padding: 50px;"><div style="display: inline-block; width: 40px; height: 40px; border: 3px solid #f3f3f3; border-top: 3px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite;"></div><p style="margin-top: 15px; color: var(--gray);">Loading payments...</p> </tr</tbody>
                                 </table>
                             </div>
                         </div>
@@ -1724,7 +1731,7 @@ router.get("/api/admin/payments", checkAdminAuth, async (req, res) => {
 });
 
 router.get("/admin/payments", checkAdminAuth, (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>Payments Management</title><style>...</style></head><body>...</body></html>`);
+    res.send(`<!DOCTYPE html><html><head><title>Payments Management</title><style>body{font-family:Arial;padding:20px;background:#f5f5f5;}h1{color:#1a237e;}</style></head><body><h1>💰 Payments Management</h1><p>Payment management page - Coming soon</p><a href="/admin/dashboard">Back to Dashboard</a></body></html>`);
 });
 
 // ========== USER MANAGEMENT ==========
@@ -1757,7 +1764,7 @@ router.get("/api/admin/users", checkAdminAuth, async (req, res) => {
 });
 
 router.get("/admin/users", checkAdminAuth, (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>User Management</title><style>...</style></head><body>...</body></html>`);
+    res.send(`<!DOCTYPE html><html><head><title>User Management</title><style>body{font-family:Arial;padding:20px;background:#f5f5f5;}h1{color:#1a237e;}</style></head><body><h1>👥 User Management</h1><p>User management page - Coming soon</p><a href="/admin/dashboard">Back to Dashboard</a></body></html>`);
 });
 
 // ========== USER ACTIVATION API ROUTES ==========
@@ -2031,7 +2038,7 @@ router.put("/api/question/:subject/:id", checkAdminAuth, upload.single('question
 });
 
 router.get("/admin/questions", checkAdminAuth, (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>Question Management</title><style>...</style></head><body>...</body></html>`);
+    res.send(`<!DOCTYPE html><html><head><title>Question Management</title><style>body{font-family:Arial;padding:20px;background:#f5f5f5;}h1{color:#1a237e;}</style></head><body><h1>📚 Question Management</h1><p>Question management page - Coming soon</p><a href="/admin/dashboard">Back to Dashboard</a></body></html>`);
 });
 
 module.exports = router;
