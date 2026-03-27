@@ -48,6 +48,10 @@ let dbStatus = {
 
 let supabase = null;
 
+console.log('🔧 Environment Check:');
+console.log(`   SUPABASE_URL: ${supabaseUrl ? supabaseUrl : 'NOT SET'}`);
+console.log(`   SUPABASE_KEY: ${supabaseKey ? 'SET (length: ' + supabaseKey.length + ')' : 'NOT SET'}`);
+
 if (supabaseUrl && supabaseKey) {
     try {
         supabase = createClient(supabaseUrl, supabaseKey);
@@ -57,11 +61,12 @@ if (supabaseUrl && supabaseKey) {
         // Test connection
         setTimeout(async () => {
             try {
-                const { error } = await supabase.from('jambuser').select('*').limit(1);
+                const { data, error } = await supabase.from('jambuser').select('*').limit(1);
                 if (!error) {
                     dbStatus.connected = true;
                     dbStatus.message = 'Connected to live database';
                     console.log('✅ Database: Connected to Supabase');
+                    console.log(`   Users found: ${data ? data.length : 0}`);
                 } else {
                     console.log('⚠️ Database: Using mock data -', error.message);
                 }
@@ -111,6 +116,22 @@ app.get('/api/health', (req, res) => {
 });
 
 // ===============================
+// DEBUG ROUTE - CHECK ENVIRONMENT VARIABLES
+// ===============================
+app.get('/api/test-env', (req, res) => {
+    res.json({
+        success: true,
+        supabaseUrl: process.env.SUPABASE_URL,
+        supabaseUrlCorrect: process.env.SUPABASE_URL === 'https://vbpehelxdstkasscjiov.supabase.co',
+        serviceKeySet: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+        serviceKeyLength: process.env.SUPABASE_SERVICE_ROLE_KEY ? process.env.SUPABASE_SERVICE_ROLE_KEY.length : 0,
+        databaseUrlSet: !!process.env.DATABASE_URL,
+        nodeEnv: process.env.NODE_ENV,
+        sessionSecretSet: !!process.env.SESSION_SECRET
+    });
+});
+
+// ===============================
 // DEBUG ROUTE - CHECK SUPABASE CONNECTION
 // ===============================
 app.get('/api/debug-supabase', async (req, res) => {
@@ -153,6 +174,46 @@ app.get('/api/debug-supabase', async (req, res) => {
             success: false,
             error: error.message,
             stack: error.stack
+        });
+    }
+});
+
+// ===============================
+// DEBUG ROUTE - TEST DATABASE QUERY
+// ===============================
+app.get('/api/test-query', async (req, res) => {
+    if (!supabase) {
+        return res.json({
+            success: false,
+            error: 'Supabase client not initialized',
+            dbStatus: dbStatus
+        });
+    }
+    
+    try {
+        const { data, error } = await supabase
+            .from('jambuser')
+            .select('*')
+            .limit(5);
+        
+        if (error) {
+            return res.json({
+                success: false,
+                error: error.message,
+                details: error
+            });
+        }
+        
+        res.json({
+            success: true,
+            userCount: data ? data.length : 0,
+            users: data,
+            dbStatus: dbStatus
+        });
+    } catch (error) {
+        res.json({
+            success: false,
+            error: error.message
         });
     }
 });
@@ -222,9 +283,7 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// ===============================
-// REGISTRATION ROUTE - ADDED
-// ===============================
+// Registration route
 app.post('/api/register', async (req, res) => {
     let { userName, email, password } = req.body;
 
