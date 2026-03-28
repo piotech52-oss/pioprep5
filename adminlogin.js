@@ -152,7 +152,6 @@ async function createPaymentNotificationsTable() {
     }
 }
 
-// FIXED: Default admin with CORRECT password hash
 async function createDefaultAdmin() {
     if (!supabase) return;
     
@@ -171,12 +170,7 @@ async function createDefaultAdmin() {
         
         if (!existingAdmin) {
             const saltRounds = 10;
-            // Generate CORRECT hash for the password
             const hashedPassword = await bcrypt.hash(adminPassword, saltRounds);
-            
-            // Verify the hash works immediately
-            const verifyHash = await bcrypt.compare(adminPassword, hashedPassword);
-            console.log(`   Password verification test: ${verifyHash ? '✅ PASS' : '❌ FAIL'}`);
             
             const { error: insertError } = await supabase
                 .from('admin_users')
@@ -197,7 +191,6 @@ async function createDefaultAdmin() {
                 console.log('📋 Admin Credentials:');
                 console.log('   Username/Email:', adminUsername);
                 console.log('   Password:', adminPassword);
-                console.log('   Password Hash:', hashedPassword);
                 console.log('   Security Code:', adminSecurityCode);
                 
                 await createPaymentNotificationsTable();
@@ -332,7 +325,6 @@ router.get("/admin/login", (req, res) => {
                 .status.connected { background: #d4edda; color: #155724; }
                 .status.disconnected { background: #f8d7da; color: #721c24; }
                 .debug-info { margin-top: 10px; font-size: 12px; color: #666; text-align: left; border-top: 1px solid #eee; padding-top: 10px; }
-                .password-hint { font-size: 11px; color: #999; margin-top: -8px; margin-bottom: 10px; text-align: left; }
             </style>
         </head>
         <body>
@@ -340,9 +332,9 @@ router.get("/admin/login", (req, res) => {
                 <h1>🔐 Admin Login</h1>
                 <div id="dbStatus" class="status">Checking database connection...</div>
                 <form id="loginForm">
-                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required value="piotech52@gmail.com">
+                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required>
                     <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
-                    <input type="text" id="securityCode" placeholder="Security Code" required value="piotech52@gmail.com">
+                    <input type="text" id="securityCode" placeholder="Security Code" required>
                     <button type="submit">Login</button>
                 </form>
                 <div id="message"></div>
@@ -386,6 +378,7 @@ router.get("/admin/login", (req, res) => {
                     const password = document.getElementById('password').value;
                     const securityCode = document.getElementById('securityCode').value.trim();
                     const messageDiv = document.getElementById('message');
+                    const loginBtn = document.querySelector('button[type="submit"]');
                     
                     if (!username || !password || !securityCode) {
                         messageDiv.textContent = 'All fields are required';
@@ -395,6 +388,8 @@ router.get("/admin/login", (req, res) => {
                     
                     messageDiv.textContent = 'Logging in...';
                     messageDiv.className = 'message success';
+                    loginBtn.disabled = true;
+                    loginBtn.textContent = 'Logging in...';
                     
                     try {
                         const response = await fetch('/api/auth/login', {
@@ -404,6 +399,7 @@ router.get("/admin/login", (req, res) => {
                         });
                         
                         const data = await response.json();
+                        console.log('Login response:', data);
                         
                         if (data.success) {
                             messageDiv.textContent = 'Login successful! Redirecting...';
@@ -413,11 +409,15 @@ router.get("/admin/login", (req, res) => {
                         } else {
                             messageDiv.textContent = data.message || 'Login failed';
                             messageDiv.className = 'message error';
+                            loginBtn.disabled = false;
+                            loginBtn.textContent = 'Login';
                         }
                     } catch (error) {
                         messageDiv.textContent = 'Connection error. Please try again.';
                         messageDiv.className = 'message error';
                         console.error('Login error:', error);
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = 'Login';
                     }
                 });
             </script>
@@ -426,7 +426,6 @@ router.get("/admin/login", (req, res) => {
     `);
 });
 
-// Admin login API - USING SUPABASE CLIENT
 router.post("/api/auth/login", async (req, res) => {
     const { username, password, security_code } = req.body;
     
@@ -482,7 +481,6 @@ router.post("/api/auth/login", async (req, res) => {
             });
         }
 
-        // FIXED: Use bcrypt.compare correctly - this is the key!
         const isPasswordValid = await bcrypt.compare(password, admin.password);
         console.log('   Password valid:', isPasswordValid);
         
@@ -550,7 +548,6 @@ router.get("/api/admin/debug-db", async (req, res) => {
     });
 });
 
-// DEBUG ROUTE TO CHECK ADMIN PASSWORD - FIXED
 router.get("/api/admin/check-admin", async (req, res) => {
     if (!supabase || !dbConnected) {
         return res.json({ success: false, message: 'Database not connected' });
@@ -571,13 +568,8 @@ router.get("/api/admin/check-admin", async (req, res) => {
         }
         
         const admin = admins[0];
-        
         const testPassword = 'piotech@52gmail.com';
         const isValid = await bcrypt.compare(testPassword, admin.password);
-        
-        // Generate a fresh hash for comparison
-        const freshHash = await bcrypt.hash(testPassword, 10);
-        const freshIsValid = await bcrypt.compare(testPassword, freshHash);
         
         res.json({
             success: true,
@@ -586,19 +578,14 @@ router.get("/api/admin/check-admin", async (req, res) => {
             role: admin.role,
             is_active: admin.is_active,
             passwordHashLength: admin.password.length,
-            passwordHash: admin.password.substring(0, 50) + '...',
             testPassword: testPassword,
             testPasswordLength: testPassword.length,
-            storedHashVerification: {
-                password: testPassword,
-                isValid: isValid
-            },
-            freshHashTest: {
-                freshHash: freshHash.substring(0, 50) + '...',
-                isValid: freshIsValid
-            },
-            message: isValid ? '✅ Password is correct!' : '❌ Password hash does not match. Visit /api/admin/fix-password to fix.',
-            recommendation: isValid ? 'Your password is correct. Try logging in again.' : 'The stored hash is incorrect. Run the fix-password endpoint.'
+            isValid: isValid,
+            message: isValid ? '✅ Password is correct!' : '❌ Password hash does not match!',
+            sessionInfo: {
+                adminLoggedIn: req.session?.adminLoggedIn || false,
+                adminUsername: req.session?.adminUsername || null
+            }
         });
     } catch (err) {
         console.error('Debug error:', err);
@@ -606,7 +593,6 @@ router.get("/api/admin/check-admin", async (req, res) => {
     }
 });
 
-// FIX ADMIN PASSWORD ROUTE - UPDATES THE HASH CORRECTLY
 router.get("/api/admin/fix-password", async (req, res) => {
     if (!supabase || !dbConnected) {
         return res.json({ success: false, message: 'Database not connected' });
@@ -619,20 +605,6 @@ router.get("/api/admin/fix-password", async (req, res) => {
         const saltRounds = 10;
         const newHashedPassword = await bcrypt.hash(correctPassword, saltRounds);
         
-        console.log('   New hash generated:', newHashedPassword);
-        
-        // Verify the new hash works immediately
-        const verifyNewHash = await bcrypt.compare(correctPassword, newHashedPassword);
-        console.log(`   New hash verification: ${verifyNewHash ? '✅ PASS' : '❌ FAIL'}`);
-        
-        if (!verifyNewHash) {
-            return res.json({ 
-                success: false, 
-                message: 'Generated hash verification failed!' 
-            });
-        }
-        
-        // Update the password in the database
         const { error: updateError } = await supabase
             .from('admin_users')
             .update({ password: newHashedPassword })
@@ -642,23 +614,22 @@ router.get("/api/admin/fix-password", async (req, res) => {
             return res.json({ success: false, error: updateError.message });
         }
         
-        // Verify the update was successful
         const { data: admins } = await supabase
             .from('admin_users')
             .select('password')
             .eq('email', adminEmail)
             .single();
         
-        const finalVerification = await bcrypt.compare(correctPassword, admins.password);
+        const isValid = await bcrypt.compare(correctPassword, admins.password);
         
         res.json({
             success: true,
             message: 'Admin password has been fixed!',
             passwordSet: correctPassword,
-            newHashGenerated: newHashedPassword,
-            newHashLength: newHashedPassword.length,
-            verificationResult: finalVerification ? '✅ Password is now correct!' : '❌ Verification still failing!',
-            nextSteps: finalVerification ? 'You can now login with password: piotech@52gmail.com' : 'There was an issue. Please check the database.'
+            newHash: newHashedPassword,
+            verificationResult: isValid ? '✅ Password verified!' : '❌ Verification failed!',
+            newHashLength: admins.password.length,
+            loginInstructions: 'You can now login with: piotech52@gmail.com / piotech@52gmail.com'
         });
     } catch (err) {
         console.error('Fix password error:', err);
@@ -708,8 +679,9 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
     }
 });
 
-// ========== DASHBOARD ==========
+// ========== DASHBOARD - FIXED ==========
 router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
+    console.log('✅ Admin dashboard accessed by:', req.session.adminUsername);
     res.send(`
         <!DOCTYPE html>
         <html>
@@ -726,6 +698,7 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
                 .action-btn:hover { background: #1a237e; color: white; transform: translateY(-2px); }
                 .logout-btn { background: #e74c3c; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; float: right; }
                 .logout-btn:hover { background: #c0392b; }
+                .welcome-message { margin-top: 10px; color: #666; }
             </style>
         </head>
         <body>
@@ -773,6 +746,10 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
                 </div>
             </div>
             
+            <div class="welcome-message">
+                <p>✅ Admin session active. You have full access to all management features.</p>
+            </div>
+            
             <script>
                 async function loadStats() {
                     try {
@@ -804,8 +781,11 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
                 }
                 
                 async function logout() {
-                    await fetch('/api/auth/logout', { method: 'POST' });
-                    window.location.href = '/admin/login';
+                    const response = await fetch('/api/auth/logout', { method: 'POST' });
+                    const data = await response.json();
+                    if (data.success) {
+                        window.location.href = '/admin/login';
+                    }
                 }
                 
                 loadStats();
@@ -853,21 +833,35 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html>
-        <head><title>User Management</title>
-        <style>
-            body { font-family: Arial; padding: 20px; background: #f5f5f5; }
-            table { width: 100%; background: white; border-collapse: collapse; }
-            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-            th { background: #1a237e; color: white; }
-            .status-active { color: green; font-weight: bold; }
-            .status-inactive { color: red; font-weight: bold; }
-            .btn { padding: 5px 10px; margin: 2px; border: none; border-radius: 3px; cursor: pointer; }
-            .btn-activate { background: #2ecc71; color: white; }
-            .btn-deactivate { background: #e67e22; color: white; }
-            .btn-code { background: #3498db; color: white; }
-        </style>
+        <head>
+            <title>User Management</title>
+            <style>
+                body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+                .nav { background: #1a237e; padding: 15px; margin-bottom: 20px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
+                .nav a { color: white; margin-right: 20px; text-decoration: none; padding: 8px 15px; border-radius: 4px; }
+                .nav a:hover { background: rgba(255,255,255,0.1); }
+                .logout { background: #e74c3c; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; }
+                table { width: 100%; background: white; border-collapse: collapse; margin-top: 20px; }
+                th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+                th { background: #1a237e; color: white; }
+                .status-active { color: green; font-weight: bold; }
+                .status-inactive { color: red; font-weight: bold; }
+                .btn { padding: 5px 10px; margin: 2px; border: none; border-radius: 3px; cursor: pointer; }
+                .btn-activate { background: #2ecc71; color: white; }
+                .btn-deactivate { background: #e67e22; color: white; }
+                .btn-code { background: #3498db; color: white; }
+            </style>
         </head>
         <body>
+            <div class="nav">
+                <div>
+                    <a href="/admin/dashboard">Dashboard</a>
+                    <a href="/admin/users">Users</a>
+                    <a href="/admin/payments">Payments</a>
+                    <a href="/admin/questions">Questions</a>
+                </div>
+                <button class="logout" onclick="logout()">Logout</button>
+            </div>
             <h1>👥 User Management</h1>
             <div id="users"></div>
             <script>
@@ -875,26 +869,26 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
                     const response = await fetch('/api/admin/users');
                     const data = await response.json();
                     if (data.success) {
-                        let html = ' 60% <th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th>  </tr';
+                        let html = '<table><thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th></tr></thead><tbody>';
                         data.users.forEach(user => {
                             const isActive = user.is_activated === '1';
                             html += \`
-                                 water
-                                    <td>\${user.userName || 'N/A'} water
-                                    <td>\${user.email} water
-                                    <td class="status-\${isActive ? 'active' : 'inactive'}">\${isActive ? 'Active' : 'Inactive'} water
-                                    <td>\${user.activationCode || 'No code'} water
+                                <tr>
+                                    <td>\${user.userName || 'N/A'}</td>
+                                    <td>\${user.email}</td>
+                                    <td class="status-\${isActive ? 'active' : 'inactive'}">\${isActive ? 'Active' : 'Inactive'}</td>
+                                    <td>\${user.activationCode || 'No code'}</td>
                                     <td>
                                         <button class="btn btn-code" onclick="sendCode('\${user.email}')">Send Code</button>
                                         \${!isActive ? 
                                             '<button class="btn btn-activate" onclick="activateUser(' + user.id + ')">Activate</button>' : 
                                             '<button class="btn btn-deactivate" onclick="deactivateUser(' + user.id + ')">Deactivate</button>'
                                         }
-                                    </div>
-                                  </div>
+                                    </td>
+                                </tr>
                             \`;
                         });
-                        html += ' </div>';
+                        html += '</tbody></table>';
                         document.getElementById('users').innerHTML = html;
                     }
                 }
@@ -919,6 +913,11 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
                     const response = await fetch(\`/api/admin/users/\${id}/deactivate\`, { method: 'POST' });
                     const data = await response.json();
                     if (data.success) loadUsers();
+                }
+                
+                async function logout() {
+                    await fetch('/api/auth/logout', { method: 'POST' });
+                    window.location.href = '/admin/login';
                 }
                 
                 loadUsers();
@@ -988,15 +987,32 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html>
-        <head><title>Payment Management</title>
-        <style>
-            body { font-family: Arial; padding: 20px; background: #f5f5f5; }
-            table { width: 100%; background: white; border-collapse: collapse; }
-            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-            th { background: #1a237e; color: white; }
-        </style>
+        <head>
+            <title>Payment Management</title>
+            <style>
+                body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+                .nav { background: #1a237e; padding: 15px; margin-bottom: 20px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
+                .nav a { color: white; margin-right: 20px; text-decoration: none; padding: 8px 15px; border-radius: 4px; }
+                .nav a:hover { background: rgba(255,255,255,0.1); }
+                .logout { background: #e74c3c; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; }
+                table { width: 100%; background: white; border-collapse: collapse; margin-top: 20px; }
+                th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+                th { background: #1a237e; color: white; }
+                .status-completed { color: green; font-weight: bold; }
+                .status-pending { color: orange; font-weight: bold; }
+                .status-failed { color: red; font-weight: bold; }
+            </style>
         </head>
         <body>
+            <div class="nav">
+                <div>
+                    <a href="/admin/dashboard">Dashboard</a>
+                    <a href="/admin/users">Users</a>
+                    <a href="/admin/payments">Payments</a>
+                    <a href="/admin/questions">Questions</a>
+                </div>
+                <button class="logout" onclick="logout()">Logout</button>
+            </div>
             <h1>💰 Payment Management</h1>
             <div id="payments"></div>
             <script>
@@ -1004,21 +1020,20 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
                     const response = await fetch('/api/admin/payments');
                     const data = await response.json();
                     if (data.success && data.payments) {
-                        let html = ' 60% <th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th>  </tr';
+                        let html = '<table><thead><tr><th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th></tr></thead><tbody>';
                         data.payments.forEach(p => {
-                            html += \` 72%
-                                      <td>\${p.userName || p.email}</td>
-                                      <td>₦\${p.amount}</td>
-                                      <td>\${p.payment_method}</td>
-                                      <td>\${p.status}</td>
-                                      <td>\${new Date(p.created_at).toLocaleDateString()}</td>
-                                    </tr>
-                            \`;
+                            html += \`<tr><td>\${p.userName || p.email}</td><td>₦\${p.amount}</td><td>\${p.payment_method}</td><td class="status-\${p.status}">\${p.status}</td><td>\${new Date(p.created_at).toLocaleDateString()}</td></tr>\`;
                         });
-                        html += ' </table>';
+                        html += '</tbody></table>';
                         document.getElementById('payments').innerHTML = html;
                     }
                 }
+                
+                async function logout() {
+                    await fetch('/api/auth/logout', { method: 'POST' });
+                    window.location.href = '/admin/login';
+                }
+                
                 loadPayments();
             </script>
         </body>
@@ -1109,13 +1124,34 @@ router.get("/admin/questions", checkAdminAuth, (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html>
-        <head><title>Question Management</title>
-        <style>body{font-family:Arial;padding:20px;background:#f5f5f5;}</style>
+        <head>
+            <title>Question Management</title>
+            <style>
+                body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+                .nav { background: #1a237e; padding: 15px; margin-bottom: 20px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
+                .nav a { color: white; margin-right: 20px; text-decoration: none; padding: 8px 15px; border-radius: 4px; }
+                .nav a:hover { background: rgba(255,255,255,0.1); }
+                .logout { background: #e74c3c; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; }
+            </style>
         </head>
         <body>
+            <div class="nav">
+                <div>
+                    <a href="/admin/dashboard">Dashboard</a>
+                    <a href="/admin/users">Users</a>
+                    <a href="/admin/payments">Payments</a>
+                    <a href="/admin/questions">Questions</a>
+                </div>
+                <button class="logout" onclick="logout()">Logout</button>
+            </div>
             <h1>📚 Question Management</h1>
             <p>Question management features coming soon...</p>
-            <a href="/admin/dashboard">Back to Dashboard</a>
+            <script>
+                async function logout() {
+                    await fetch('/api/auth/logout', { method: 'POST' });
+                    window.location.href = '/admin/login';
+                }
+            </script>
         </body>
         </html>
     `);
