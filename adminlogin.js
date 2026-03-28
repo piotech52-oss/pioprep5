@@ -208,6 +208,14 @@ async function createDefaultAdmin() {
 // ========== MIDDLEWARE ==========
 
 const checkAdminAuth = (req, res, next) => {
+    // Log session for debugging
+    console.log('🔐 Auth Check - Session:', {
+        exists: !!req.session,
+        adminLoggedIn: req.session?.adminLoggedIn,
+        adminUsername: req.session?.adminUsername,
+        sessionID: req.sessionID
+    });
+    
     if (!req.session || !req.session.adminLoggedIn) {
         return res.redirect('/admin/login');
     }
@@ -303,28 +311,114 @@ router.get("/admin/login", (req, res) => {
         <head>
             <title>Admin Login</title>
             <style>
-                body { font-family: Arial; padding: 50px; text-align: center; 
+                body { 
+                    font-family: Arial; 
+                    padding: 50px; 
+                    text-align: center; 
                     background: linear-gradient(135deg, #1a237e 0%, #311b92 100%);
-                    height: 100vh; display: flex; justify-content: center; align-items: center; margin: 0; }
-                .login-box { background: white; padding: 40px; border-radius: 10px; 
-                    box-shadow: 0 15px 35px rgba(0,0,0,0.3); width: 100%; max-width: 400px; }
-                h1 { color: #1a237e; margin-bottom: 30px; }
-                input { width: 100%; padding: 12px; margin: 10px 0; border: 2px solid #ddd; 
-                    border-radius: 5px; font-size: 16px; box-sizing: border-box; }
-                button { width: 100%; padding: 12px; background: #1a237e; color: white; 
-                    border: none; border-radius: 5px; font-size: 16px; cursor: pointer; margin-top: 20px; }
-                button:hover { background: #311b92; }
-                .back { display: inline-block; margin-top: 20px; color: #1a237e; text-decoration: none; }
-                .credentials { margin-top: 20px; padding: 15px; background: #f8f9fa; 
-                    border-radius: 5px; font-size: 14px; text-align: left; }
-                .credentials code { background: #e9ecef; padding: 2px 6px; border-radius: 3px; }
-                .message { margin-top: 15px; padding: 10px; border-radius: 5px; }
-                .message.error { background: #f8d7da; color: #721c24; }
-                .message.success { background: #d4edda; color: #155724; }
-                .status { margin-top: 10px; padding: 8px; border-radius: 5px; font-size: 12px; }
-                .status.connected { background: #d4edda; color: #155724; }
-                .status.disconnected { background: #f8d7da; color: #721c24; }
-                .debug-info { margin-top: 10px; font-size: 12px; color: #666; text-align: left; border-top: 1px solid #eee; padding-top: 10px; }
+                    height: 100vh; 
+                    display: flex; 
+                    justify-content: center; 
+                    align-items: center; 
+                    margin: 0;
+                }
+                .login-box { 
+                    background: white; 
+                    padding: 40px; 
+                    border-radius: 10px; 
+                    box-shadow: 0 15px 35px rgba(0,0,0,0.3); 
+                    width: 100%; 
+                    max-width: 400px;
+                }
+                h1 { 
+                    color: #1a237e; 
+                    margin-bottom: 30px;
+                }
+                input { 
+                    width: 100%; 
+                    padding: 12px; 
+                    margin: 10px 0; 
+                    border: 2px solid #ddd; 
+                    border-radius: 5px; 
+                    font-size: 16px;
+                    box-sizing: border-box;
+                }
+                input:focus {
+                    outline: none;
+                    border-color: #1a237e;
+                }
+                button { 
+                    width: 100%; 
+                    padding: 12px; 
+                    background: #1a237e; 
+                    color: white; 
+                    border: none; 
+                    border-radius: 5px; 
+                    font-size: 16px; 
+                    cursor: pointer; 
+                    margin-top: 20px;
+                }
+                button:hover { 
+                    background: #311b92;
+                }
+                button:disabled {
+                    opacity: 0.6;
+                    cursor: not-allowed;
+                }
+                .back { 
+                    display: inline-block; 
+                    margin-top: 20px; 
+                    color: #1a237e; 
+                    text-decoration: none;
+                }
+                .credentials { 
+                    margin-top: 20px; 
+                    padding: 15px; 
+                    background: #f8f9fa; 
+                    border-radius: 5px; 
+                    font-size: 14px; 
+                    text-align: left;
+                }
+                .credentials code {
+                    background: #e9ecef;
+                    padding: 2px 6px;
+                    border-radius: 3px;
+                }
+                .message { 
+                    margin-top: 15px; 
+                    padding: 10px; 
+                    border-radius: 5px; 
+                }
+                .message.error { 
+                    background: #f8d7da; 
+                    color: #721c24; 
+                }
+                .message.success { 
+                    background: #d4edda; 
+                    color: #155724; 
+                }
+                .status { 
+                    margin-top: 10px; 
+                    padding: 8px; 
+                    border-radius: 5px; 
+                    font-size: 12px; 
+                }
+                .status.connected { 
+                    background: #d4edda; 
+                    color: #155724; 
+                }
+                .status.disconnected { 
+                    background: #f8d7da; 
+                    color: #721c24; 
+                }
+                .debug-info { 
+                    margin-top: 10px; 
+                    font-size: 12px; 
+                    color: #666; 
+                    text-align: left; 
+                    border-top: 1px solid #eee; 
+                    padding-top: 10px; 
+                }
             </style>
         </head>
         <body>
@@ -332,10 +426,10 @@ router.get("/admin/login", (req, res) => {
                 <h1>🔐 Admin Login</h1>
                 <div id="dbStatus" class="status">Checking database connection...</div>
                 <form id="loginForm">
-                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required>
+                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required value="piotech52@gmail.com">
                     <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
-                    <input type="text" id="securityCode" placeholder="Security Code" required>
-                    <button type="submit">Login</button>
+                    <input type="text" id="securityCode" placeholder="Security Code" required value="piotech52@gmail.com">
+                    <button type="submit" id="loginBtn">Login</button>
                 </form>
                 <div id="message"></div>
                 <div class="credentials">
@@ -378,7 +472,7 @@ router.get("/admin/login", (req, res) => {
                     const password = document.getElementById('password').value;
                     const securityCode = document.getElementById('securityCode').value.trim();
                     const messageDiv = document.getElementById('message');
-                    const loginBtn = document.querySelector('button[type="submit"]');
+                    const loginBtn = document.getElementById('loginBtn');
                     
                     if (!username || !password || !securityCode) {
                         messageDiv.textContent = 'All fields are required';
@@ -403,9 +497,8 @@ router.get("/admin/login", (req, res) => {
                         
                         if (data.success) {
                             messageDiv.textContent = 'Login successful! Redirecting...';
-                            setTimeout(() => {
-                                window.location.href = '/admin/dashboard';
-                            }, 1000);
+                            // Force redirect to dashboard
+                            window.location.href = '/admin/dashboard';
                         } else {
                             messageDiv.textContent = data.message || 'Login failed';
                             messageDiv.className = 'message error';
@@ -493,11 +586,20 @@ router.post("/api/auth/login", async (req, res) => {
 
         console.log('✅ Admin login successful:', username);
         
+        // Set session
         req.session.adminId = admin.id;
         req.session.adminUsername = admin.username;
         req.session.adminEmail = admin.email;
         req.session.adminRole = admin.role;
         req.session.adminLoggedIn = true;
+        
+        // Save session explicitly
+        req.session.save((err) => {
+            if (err) {
+                console.error('Session save error:', err);
+            }
+            console.log('Session saved with adminLoggedIn:', req.session.adminLoggedIn);
+        });
         
         const token = jwt.sign(
             { id: admin.id, username: admin.username, role: admin.role, email: admin.email },
@@ -545,6 +647,17 @@ router.get("/api/admin/debug-db", async (req, res) => {
         supabaseUrl: process.env.SUPABASE_URL ? 'Set' : 'Not set',
         supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'Set' : 'Not set',
         timestamp: new Date().toISOString()
+    });
+});
+
+// Test session route
+router.get("/api/admin/test-session", (req, res) => {
+    res.json({
+        sessionExists: !!req.session,
+        adminLoggedIn: req.session?.adminLoggedIn || false,
+        adminUsername: req.session?.adminUsername || null,
+        adminId: req.session?.adminId || null,
+        sessionID: req.sessionID
     });
 });
 
@@ -680,8 +793,20 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
 });
 
 // ========== DASHBOARD - FIXED ==========
-router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
-    console.log('✅ Admin dashboard accessed by:', req.session.adminUsername);
+router.get("/admin/dashboard", (req, res) => {
+    console.log('📊 Dashboard accessed');
+    console.log('   Session:', {
+        exists: !!req.session,
+        adminLoggedIn: req.session?.adminLoggedIn,
+        adminUsername: req.session?.adminUsername
+    });
+    
+    // Check if user is logged in
+    if (!req.session || !req.session.adminLoggedIn) {
+        console.log('⚠️ Not logged in, redirecting to login');
+        return res.redirect('/admin/login');
+    }
+    
     res.send(`
         <!DOCTYPE html>
         <html>
@@ -781,9 +906,14 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
                 }
                 
                 async function logout() {
-                    const response = await fetch('/api/auth/logout', { method: 'POST' });
-                    const data = await response.json();
-                    if (data.success) {
+                    try {
+                        const response = await fetch('/api/auth/logout', { method: 'POST' });
+                        const data = await response.json();
+                        if (data.success) {
+                            window.location.href = '/admin/login';
+                        }
+                    } catch (error) {
+                        console.error('Logout error:', error);
                         window.location.href = '/admin/login';
                     }
                 }
