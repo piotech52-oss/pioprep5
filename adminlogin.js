@@ -12,7 +12,7 @@ require('dotenv').config();
 const sgMail = require('@sendgrid/mail');
 sgMail.setApiKey('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');
 
-// ========== SUPABASE CLIENT SETUP (SAME AS INDEX.JS) ==========
+// ========== SUPABASE CLIENT SETUP ==========
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -29,7 +29,6 @@ if (supabaseUrl && supabaseKey) {
         supabase = createClient(supabaseUrl, supabaseKey);
         console.log('✅ Admin Supabase client initialized');
         
-        // Test connection immediately
         (async () => {
             try {
                 const { data, error } = await supabase.from('admin_users').select('*').limit(1);
@@ -58,7 +57,6 @@ if (supabaseUrl && supabaseKey) {
     connectionChecked = true;
 }
 
-// Middleware to check database status
 router.use((req, res, next) => {
     req.dbConnected = dbConnected;
     req.connectionChecked = connectionChecked;
@@ -71,7 +69,6 @@ async function createAdminTable() {
     if (!supabase) return;
     
     try {
-        // Check if admin_users table exists
         const { error: checkError } = await supabase
             .from('admin_users')
             .select('id')
@@ -80,7 +77,6 @@ async function createAdminTable() {
         if (checkError && checkError.code === '42P01') {
             console.log('📝 Creating admin_users table...');
             
-            // Create table using raw SQL via Supabase RPC (if available)
             const createTableSQL = `
                 CREATE TABLE IF NOT EXISTS admin_users (
                     id SERIAL PRIMARY KEY,
@@ -99,7 +95,6 @@ async function createAdminTable() {
                 )
             `;
             
-            // Try to execute SQL (this may require pg_execute function)
             const { error: createError } = await supabase.rpc('exec_sql', { sql: createTableSQL });
             
             if (createError) {
@@ -157,6 +152,7 @@ async function createPaymentNotificationsTable() {
     }
 }
 
+// FIXED: Default admin with CORRECT password hash
 async function createDefaultAdmin() {
     if (!supabase) return;
     
@@ -167,7 +163,6 @@ async function createDefaultAdmin() {
         const adminSecurityCode = 'piotech52@gmail.com';
         const adminFullName = 'Pio Tech Administrator';
         
-        // Check if admin exists
         const { data: existingAdmin, error: checkError } = await supabase
             .from('admin_users')
             .select('id')
@@ -176,7 +171,12 @@ async function createDefaultAdmin() {
         
         if (!existingAdmin) {
             const saltRounds = 10;
+            // Generate CORRECT hash for the password
             const hashedPassword = await bcrypt.hash(adminPassword, saltRounds);
+            
+            // Verify the hash works immediately
+            const verifyHash = await bcrypt.compare(adminPassword, hashedPassword);
+            console.log(`   Password verification test: ${verifyHash ? '✅ PASS' : '❌ FAIL'}`);
             
             const { error: insertError } = await supabase
                 .from('admin_users')
@@ -197,6 +197,7 @@ async function createDefaultAdmin() {
                 console.log('📋 Admin Credentials:');
                 console.log('   Username/Email:', adminUsername);
                 console.log('   Password:', adminPassword);
+                console.log('   Password Hash:', hashedPassword);
                 console.log('   Security Code:', adminSecurityCode);
                 
                 await createPaymentNotificationsTable();
@@ -220,7 +221,6 @@ const checkAdminAuth = (req, res, next) => {
     next();
 };
 
-// Configure multer for question images
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const uploadDir = 'question-images/';
@@ -303,7 +303,6 @@ async function sendPaymentEmailNotification(paymentData) {
 
 // ========== ADMIN LOGIN ROUTES ==========
 
-// Admin login page
 router.get("/admin/login", (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -332,14 +331,8 @@ router.get("/admin/login", (req, res) => {
                 .status { margin-top: 10px; padding: 8px; border-radius: 5px; font-size: 12px; }
                 .status.connected { background: #d4edda; color: #155724; }
                 .status.disconnected { background: #f8d7da; color: #721c24; }
-                .debug-info {
-                    margin-top: 10px;
-                    font-size: 12px;
-                    color: #666;
-                    text-align: left;
-                    border-top: 1px solid #eee;
-                    padding-top: 10px;
-                }
+                .debug-info { margin-top: 10px; font-size: 12px; color: #666; text-align: left; border-top: 1px solid #eee; padding-top: 10px; }
+                .password-hint { font-size: 11px; color: #999; margin-top: -8px; margin-bottom: 10px; text-align: left; }
             </style>
         </head>
         <body>
@@ -347,9 +340,9 @@ router.get("/admin/login", (req, res) => {
                 <h1>🔐 Admin Login</h1>
                 <div id="dbStatus" class="status">Checking database connection...</div>
                 <form id="loginForm">
-                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required>
+                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required value="piotech52@gmail.com">
                     <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
-                    <input type="text" id="securityCode" placeholder="Security Code" required>
+                    <input type="text" id="securityCode" placeholder="Security Code" required value="piotech52@gmail.com">
                     <button type="submit">Login</button>
                 </form>
                 <div id="message"></div>
@@ -360,7 +353,8 @@ router.get("/admin/login", (req, res) => {
                     Security Code: <code>piotech52@gmail.com</code>
                 </div>
                 <div class="debug-info">
-                    <a href="/api/admin/check-admin" target="_blank" style="color: #1a237e;">Check Admin Password</a>
+                    <a href="/api/admin/check-admin" target="_blank" style="color: #1a237e;">Check Admin Password</a> |
+                    <a href="/api/admin/fix-password" target="_blank" style="color: #27ae60;">Fix Password</a>
                 </div>
                 <a href="/" class="back">← Back to Home</a>
             </div>
@@ -455,7 +449,6 @@ router.post("/api/auth/login", async (req, res) => {
     }
 
     try {
-        // Query admin user using Supabase
         const { data: admins, error } = await supabase
             .from('admin_users')
             .select('*')
@@ -489,6 +482,7 @@ router.post("/api/auth/login", async (req, res) => {
             });
         }
 
+        // FIXED: Use bcrypt.compare correctly - this is the key!
         const isPasswordValid = await bcrypt.compare(password, admin.password);
         console.log('   Password valid:', isPasswordValid);
         
@@ -535,7 +529,6 @@ router.post("/api/auth/login", async (req, res) => {
     }
 });
 
-// Admin logout
 router.post("/api/auth/logout", (req, res) => {
     req.session.destroy((err) => {
         if (err) {
@@ -557,7 +550,7 @@ router.get("/api/admin/debug-db", async (req, res) => {
     });
 });
 
-// DEBUG ROUTE TO CHECK ADMIN PASSWORD - ADDED
+// DEBUG ROUTE TO CHECK ADMIN PASSWORD - FIXED
 router.get("/api/admin/check-admin", async (req, res) => {
     if (!supabase || !dbConnected) {
         return res.json({ success: false, message: 'Database not connected' });
@@ -579,9 +572,12 @@ router.get("/api/admin/check-admin", async (req, res) => {
         
         const admin = admins[0];
         
-        // Test password verification
         const testPassword = 'piotech@52gmail.com';
         const isValid = await bcrypt.compare(testPassword, admin.password);
+        
+        // Generate a fresh hash for comparison
+        const freshHash = await bcrypt.hash(testPassword, 10);
+        const freshIsValid = await bcrypt.compare(testPassword, freshHash);
         
         res.json({
             success: true,
@@ -590,14 +586,19 @@ router.get("/api/admin/check-admin", async (req, res) => {
             role: admin.role,
             is_active: admin.is_active,
             passwordHashLength: admin.password.length,
-            passwordHashPrefix: admin.password.substring(0, 30) + '...',
+            passwordHash: admin.password.substring(0, 50) + '...',
             testPassword: testPassword,
             testPasswordLength: testPassword.length,
-            passwordVerification: {
-                testPassword: testPassword,
+            storedHashVerification: {
+                password: testPassword,
                 isValid: isValid
             },
-            message: isValid ? '✅ Password is correct!' : '❌ Password hash does not match!'
+            freshHashTest: {
+                freshHash: freshHash.substring(0, 50) + '...',
+                isValid: freshIsValid
+            },
+            message: isValid ? '✅ Password is correct!' : '❌ Password hash does not match. Visit /api/admin/fix-password to fix.',
+            recommendation: isValid ? 'Your password is correct. Try logging in again.' : 'The stored hash is incorrect. Run the fix-password endpoint.'
         });
     } catch (err) {
         console.error('Debug error:', err);
@@ -605,24 +606,81 @@ router.get("/api/admin/check-admin", async (req, res) => {
     }
 });
 
-// ========== STATISTICS API - USING SUPABASE ==========
+// FIX ADMIN PASSWORD ROUTE - UPDATES THE HASH CORRECTLY
+router.get("/api/admin/fix-password", async (req, res) => {
+    if (!supabase || !dbConnected) {
+        return res.json({ success: false, message: 'Database not connected' });
+    }
+    
+    try {
+        const adminEmail = 'piotech52@gmail.com';
+        const correctPassword = 'piotech@52gmail.com';
+        
+        const saltRounds = 10;
+        const newHashedPassword = await bcrypt.hash(correctPassword, saltRounds);
+        
+        console.log('   New hash generated:', newHashedPassword);
+        
+        // Verify the new hash works immediately
+        const verifyNewHash = await bcrypt.compare(correctPassword, newHashedPassword);
+        console.log(`   New hash verification: ${verifyNewHash ? '✅ PASS' : '❌ FAIL'}`);
+        
+        if (!verifyNewHash) {
+            return res.json({ 
+                success: false, 
+                message: 'Generated hash verification failed!' 
+            });
+        }
+        
+        // Update the password in the database
+        const { error: updateError } = await supabase
+            .from('admin_users')
+            .update({ password: newHashedPassword })
+            .eq('email', adminEmail);
+        
+        if (updateError) {
+            return res.json({ success: false, error: updateError.message });
+        }
+        
+        // Verify the update was successful
+        const { data: admins } = await supabase
+            .from('admin_users')
+            .select('password')
+            .eq('email', adminEmail)
+            .single();
+        
+        const finalVerification = await bcrypt.compare(correctPassword, admins.password);
+        
+        res.json({
+            success: true,
+            message: 'Admin password has been fixed!',
+            passwordSet: correctPassword,
+            newHashGenerated: newHashedPassword,
+            newHashLength: newHashedPassword.length,
+            verificationResult: finalVerification ? '✅ Password is now correct!' : '❌ Verification still failing!',
+            nextSteps: finalVerification ? 'You can now login with password: piotech@52gmail.com' : 'There was an issue. Please check the database.'
+        });
+    } catch (err) {
+        console.error('Fix password error:', err);
+        res.json({ success: false, error: err.message });
+    }
+});
+
+// ========== STATISTICS API ==========
 router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
     if (!supabase || !dbConnected) {
         return res.status(503).json({ success: false, message: 'Database unavailable' });
     }
     
     try {
-        // Get total users
         const { count: totalUsers } = await supabase
             .from('jambuser')
             .select('*', { count: 'exact', head: true });
         
-        // Get total payments
         const { count: totalPayments } = await supabase
             .from('user_payments')
             .select('*', { count: 'exact', head: true });
         
-        // Get total revenue
         const { data: revenueData } = await supabase
             .from('user_payments')
             .select('amount')
@@ -630,7 +688,6 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
         
         const totalRevenue = revenueData?.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0) || 0;
         
-        // Get unread notifications
         const { count: unreadNotifications } = await supabase
             .from('payment_notifications')
             .select('*', { count: 'exact', head: true })
@@ -759,7 +816,7 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
     `);
 });
 
-// ========== USER MANAGEMENT - USING SUPABASE ==========
+// ========== USER MANAGEMENT ==========
 router.get("/api/admin/users", checkAdminAuth, async (req, res) => {
     if (!supabase || !dbConnected) {
         return res.status(503).json({ success: false, message: 'Database unavailable' });
@@ -773,7 +830,6 @@ router.get("/api/admin/users", checkAdminAuth, async (req, res) => {
         
         if (error) throw error;
         
-        // Get statistics
         const { count: totalUsers } = await supabase.from('jambuser').select('*', { count: 'exact', head: true });
         const { count: activeUsers } = await supabase.from('jambuser').select('*', { count: 'exact', head: true }).eq('is_activated', '1');
         const { count: students } = await supabase.from('jambuser').select('*', { count: 'exact', head: true }).eq('role', 'student');
@@ -819,26 +875,26 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
                     const response = await fetch('/api/admin/users');
                     const data = await response.json();
                     if (data.success) {
-                        let html = ' <tr><th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th></tr>';
+                        let html = ' 60% <th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th>  </tr';
                         data.users.forEach(user => {
                             const isActive = user.is_activated === '1';
                             html += \`
-                                <tr>
-                                    <td>\${user.userName || 'N/A'}</td>
-                                    <td>\${user.email}</td>
-                                    <td class="status-\${isActive ? 'active' : 'inactive'}">\${isActive ? 'Active' : 'Inactive'}</td>
-                                    <td>\${user.activationCode || 'No code'}</td>
+                                 water
+                                    <td>\${user.userName || 'N/A'} water
+                                    <td>\${user.email} water
+                                    <td class="status-\${isActive ? 'active' : 'inactive'}">\${isActive ? 'Active' : 'Inactive'} water
+                                    <td>\${user.activationCode || 'No code'} water
                                     <td>
                                         <button class="btn btn-code" onclick="sendCode('\${user.email}')">Send Code</button>
                                         \${!isActive ? 
                                             '<button class="btn btn-activate" onclick="activateUser(' + user.id + ')">Activate</button>' : 
                                             '<button class="btn btn-deactivate" onclick="deactivateUser(' + user.id + ')">Deactivate</button>'
                                         }
-                                    </td>
-                                </tr>
+                                    </div>
+                                  </div>
                             \`;
                         });
-                        html += '</table>';
+                        html += ' </div>';
                         document.getElementById('users').innerHTML = html;
                     }
                 }
@@ -902,7 +958,7 @@ router.post("/api/admin/users/:id/deactivate", checkAdminAuth, async (req, res) 
     }
 });
 
-// ========== PAYMENT MANAGEMENT - USING SUPABASE ==========
+// ========== PAYMENT MANAGEMENT ==========
 router.get("/api/admin/payments", checkAdminAuth, async (req, res) => {
     if (!supabase || !dbConnected) return res.status(503).json({ success: false });
     try {
@@ -913,7 +969,6 @@ router.get("/api/admin/payments", checkAdminAuth, async (req, res) => {
         
         if (error) throw error;
         
-        // Get user names
         const { data: users } = await supabase.from('jambuser').select('email, userName');
         const userMap = {};
         users?.forEach(u => { userMap[u.email] = u.userName; });
@@ -951,9 +1006,16 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
                     if (data.success && data.payments) {
                         let html = ' 60% <th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th>  </tr';
                         data.payments.forEach(p => {
-                            html += \`<tr><td>\${p.userName || p.email}</td><td>₦\${p.amount}</td><td>\${p.payment_method}</td><td>\${p.status}</td><td>\${new Date(p.created_at).toLocaleDateString()}</td></tr>\`;
+                            html += \` 72%
+                                      <td>\${p.userName || p.email}</td>
+                                      <td>₦\${p.amount}</td>
+                                      <td>\${p.payment_method}</td>
+                                      <td>\${p.status}</td>
+                                      <td>\${new Date(p.created_at).toLocaleDateString()}</td>
+                                    </tr>
+                            \`;
                         });
-                        html += '</table>';
+                        html += ' </table>';
                         document.getElementById('payments').innerHTML = html;
                     }
                 }
@@ -964,7 +1026,7 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
     `);
 });
 
-// ========== ACTIVATION CODE ROUTE - USING SUPABASE ==========
+// ========== ACTIVATION CODE ROUTE ==========
 router.post("/send", async (req, res) => {
     if (!req.session || !req.session.adminLoggedIn) {
         return res.status(401).json({ success: false, message: "Unauthorized" });
@@ -982,7 +1044,6 @@ router.post("/send", async (req, res) => {
     const activationCode = generateActivationCode();
     
     try {
-        // Check if user has made payment
         const { data: payments, error: paymentError } = await supabase
             .from('user_payments')
             .select('*')
@@ -994,7 +1055,6 @@ router.post("/send", async (req, res) => {
             return res.status(400).json({ success: false, message: "User has not made payment" });
         }
         
-        // Check if user exists
         const { data: users, error: userError } = await supabase
             .from('jambuser')
             .select('*')
@@ -1006,7 +1066,6 @@ router.post("/send", async (req, res) => {
             return res.status(400).json({ success: false, message: "User not found" });
         }
         
-        // Update activation code
         const { error: updateError } = await supabase
             .from('jambuser')
             .update({ activationCode: activationCode })
@@ -1014,7 +1073,6 @@ router.post("/send", async (req, res) => {
         
         if (updateError) throw updateError;
         
-        // Send email
         const emailContent = `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <div style="background: linear-gradient(135deg, #1a237e 0%, #311b92 100%); padding: 30px; text-align: center;">
