@@ -80,6 +80,7 @@ async function createAdminTable() {
         if (checkError && checkError.code === '42P01') {
             console.log('📝 Creating admin_users table...');
             
+            // Create table using raw SQL via Supabase RPC (if available)
             const createTableSQL = `
                 CREATE TABLE IF NOT EXISTS admin_users (
                     id SERIAL PRIMARY KEY,
@@ -98,6 +99,7 @@ async function createAdminTable() {
                 )
             `;
             
+            // Try to execute SQL (this may require pg_execute function)
             const { error: createError } = await supabase.rpc('exec_sql', { sql: createTableSQL });
             
             if (createError) {
@@ -165,6 +167,7 @@ async function createDefaultAdmin() {
         const adminSecurityCode = 'piotech52@gmail.com';
         const adminFullName = 'Pio Tech Administrator';
         
+        // Check if admin exists
         const { data: existingAdmin, error: checkError } = await supabase
             .from('admin_users')
             .select('id')
@@ -300,7 +303,7 @@ async function sendPaymentEmailNotification(paymentData) {
 
 // ========== ADMIN LOGIN ROUTES ==========
 
-// Admin login page - FIXED with better password handling
+// Admin login page
 router.get("/admin/login", (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -308,106 +311,27 @@ router.get("/admin/login", (req, res) => {
         <head>
             <title>Admin Login</title>
             <style>
-                body { 
-                    font-family: Arial; 
-                    padding: 50px; 
-                    text-align: center; 
+                body { font-family: Arial; padding: 50px; text-align: center; 
                     background: linear-gradient(135deg, #1a237e 0%, #311b92 100%);
-                    height: 100vh; 
-                    display: flex; 
-                    justify-content: center; 
-                    align-items: center; 
-                    margin: 0;
-                }
-                .login-box { 
-                    background: white; 
-                    padding: 40px; 
-                    border-radius: 10px; 
-                    box-shadow: 0 15px 35px rgba(0,0,0,0.3); 
-                    width: 100%; 
-                    max-width: 500px;
-                }
-                h1 { 
-                    color: #1a237e; 
-                    margin-bottom: 30px;
-                }
-                input { 
-                    width: 100%; 
-                    padding: 12px; 
-                    margin: 10px 0; 
-                    border: 2px solid #ddd; 
-                    border-radius: 5px; 
-                    font-size: 16px;
-                    box-sizing: border-box;
-                }
-                input:focus {
-                    outline: none;
-                    border-color: #1a237e;
-                }
-                button { 
-                    width: 100%; 
-                    padding: 12px; 
-                    background: #1a237e; 
-                    color: white; 
-                    border: none; 
-                    border-radius: 5px; 
-                    font-size: 16px; 
-                    cursor: pointer; 
-                    margin-top: 20px;
-                }
-                button:hover { 
-                    background: #311b92;
-                }
-                .back { 
-                    display: inline-block; 
-                    margin-top: 20px; 
-                    color: #1a237e; 
-                    text-decoration: none;
-                }
-                .credentials { 
-                    margin-top: 20px; 
-                    padding: 15px; 
-                    background: #f8f9fa; 
-                    border-radius: 5px; 
-                    font-size: 14px; 
-                    text-align: left;
-                }
-                .credentials code {
-                    background: #e9ecef;
-                    padding: 2px 6px;
-                    border-radius: 3px;
-                    word-break: break-all;
-                    font-size: 13px;
-                }
-                .message {
-                    margin-top: 15px;
-                    padding: 10px;
-                    border-radius: 5px;
-                }
-                .message.error {
-                    background: #f8d7da;
-                    color: #721c24;
-                    border: 1px solid #f5c6cb;
-                }
-                .message.success {
-                    background: #d4edda;
-                    color: #155724;
-                    border: 1px solid #c3e6cb;
-                }
-                .status {
-                    margin-top: 10px;
-                    padding: 8px;
-                    border-radius: 5px;
-                    font-size: 12px;
-                }
-                .status.connected {
-                    background: #d4edda;
-                    color: #155724;
-                }
-                .status.disconnected {
-                    background: #f8d7da;
-                    color: #721c24;
-                }
+                    height: 100vh; display: flex; justify-content: center; align-items: center; margin: 0; }
+                .login-box { background: white; padding: 40px; border-radius: 10px; 
+                    box-shadow: 0 15px 35px rgba(0,0,0,0.3); width: 100%; max-width: 400px; }
+                h1 { color: #1a237e; margin-bottom: 30px; }
+                input { width: 100%; padding: 12px; margin: 10px 0; border: 2px solid #ddd; 
+                    border-radius: 5px; font-size: 16px; box-sizing: border-box; }
+                button { width: 100%; padding: 12px; background: #1a237e; color: white; 
+                    border: none; border-radius: 5px; font-size: 16px; cursor: pointer; margin-top: 20px; }
+                button:hover { background: #311b92; }
+                .back { display: inline-block; margin-top: 20px; color: #1a237e; text-decoration: none; }
+                .credentials { margin-top: 20px; padding: 15px; background: #f8f9fa; 
+                    border-radius: 5px; font-size: 14px; text-align: left; }
+                .credentials code { background: #e9ecef; padding: 2px 6px; border-radius: 3px; }
+                .message { margin-top: 15px; padding: 10px; border-radius: 5px; }
+                .message.error { background: #f8d7da; color: #721c24; }
+                .message.success { background: #d4edda; color: #155724; }
+                .status { margin-top: 10px; padding: 8px; border-radius: 5px; font-size: 12px; }
+                .status.connected { background: #d4edda; color: #155724; }
+                .status.disconnected { background: #f8d7da; color: #721c24; }
                 .debug-info {
                     margin-top: 10px;
                     font-size: 12px;
@@ -416,29 +340,17 @@ router.get("/admin/login", (req, res) => {
                     border-top: 1px solid #eee;
                     padding-top: 10px;
                 }
-                .password-hint {
-                    font-size: 11px;
-                    color: #999;
-                    margin-top: -8px;
-                    margin-bottom: 10px;
-                    text-align: left;
-                }
             </style>
         </head>
         <body>
             <div class="login-box">
                 <h1>🔐 Admin Login</h1>
                 <div id="dbStatus" class="status">Checking database connection...</div>
-                <form id="loginForm" onsubmit="return false;">
-                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required value="piotech52@gmail.com">
-                    <input type="password" id="password" placeholder="Password" autocomplete="current-password" required style="font-family: monospace;">
-                    <div class="password-hint">
-                        <strong>Full password:</strong> piotech@52gmail.com (21 characters)
-                        <br>
-                        <span id="passwordWarning" style="color: red; display: none;">⚠️ Password must be exactly 21 characters!</span>
-                    </div>
-                    <input type="text" id="securityCode" placeholder="Security Code" required value="piotech52@gmail.com">
-                    <button type="submit" id="loginBtn">Login</button>
+                <form id="loginForm">
+                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required>
+                    <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
+                    <input type="text" id="securityCode" placeholder="Security Code" required>
+                    <button type="submit">Login</button>
                 </form>
                 <div id="message"></div>
                 <div class="credentials">
@@ -448,34 +360,12 @@ router.get("/admin/login", (req, res) => {
                     Security Code: <code>piotech52@gmail.com</code>
                 </div>
                 <div class="debug-info">
-                    <strong>Debug:</strong> <span id="passwordLength">0</span> characters typed<br>
-                    <a href="/api/admin/check-admin" target="_blank" style="color: #1a237e;">🔍 Check Admin Password in Database</a>
+                    <a href="/api/admin/check-admin" target="_blank" style="color: #1a237e;">Check Admin Password</a><br>
+                    <a href="/api/admin/fix-password" target="_blank" style="color: #1a237e;">Fix Admin Password</a>
                 </div>
                 <a href="/" class="back">← Back to Home</a>
             </div>
             <script>
-                const passwordInput = document.getElementById('password');
-                const passwordLengthSpan = document.getElementById('passwordLength');
-                const passwordWarning = document.getElementById('passwordWarning');
-                
-                passwordInput.addEventListener('input', function() {
-                    const len = this.value.length;
-                    passwordLengthSpan.textContent = len;
-                    if (len === 21) {
-                        passwordLengthSpan.style.color = 'green';
-                        passwordLengthSpan.style.fontWeight = 'bold';
-                        passwordWarning.style.display = 'none';
-                    } else {
-                        passwordLengthSpan.style.color = 'red';
-                        passwordLengthSpan.style.fontWeight = 'normal';
-                        if (len > 0) {
-                            passwordWarning.style.display = 'block';
-                        } else {
-                            passwordWarning.style.display = 'none';
-                        }
-                    }
-                });
-                
                 async function checkDBStatus() {
                     try {
                         const response = await fetch('/api/admin/debug-db');
@@ -499,19 +389,10 @@ router.get("/admin/login", (req, res) => {
                 
                 document.getElementById('loginForm').addEventListener('submit', async (e) => {
                     e.preventDefault();
-                    
                     const username = document.getElementById('username').value.trim();
                     const password = document.getElementById('password').value;
                     const securityCode = document.getElementById('securityCode').value.trim();
                     const messageDiv = document.getElementById('message');
-                    const loginBtn = document.getElementById('loginBtn');
-                    
-                    console.log('Login attempt:', { 
-                        username, 
-                        passwordLength: password.length, 
-                        passwordValue: password,
-                        securityCode 
-                    });
                     
                     if (!username || !password || !securityCode) {
                         messageDiv.textContent = 'All fields are required';
@@ -519,30 +400,17 @@ router.get("/admin/login", (req, res) => {
                         return;
                     }
                     
-                    if (password.length !== 21) {
-                        messageDiv.textContent = 'Password must be exactly 21 characters. Full password: piotech@52gmail.com (you typed ' + password.length + ' chars)';
-                        messageDiv.className = 'message error';
-                        return;
-                    }
-                    
                     messageDiv.textContent = 'Logging in...';
                     messageDiv.className = 'message success';
-                    loginBtn.disabled = true;
-                    loginBtn.textContent = 'Logging in...';
                     
                     try {
                         const response = await fetch('/api/auth/login', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ 
-                                username: username, 
-                                password: password, 
-                                security_code: securityCode 
-                            })
+                            body: JSON.stringify({ username, password, security_code: securityCode })
                         });
                         
                         const data = await response.json();
-                        console.log('Login response:', data);
                         
                         if (data.success) {
                             messageDiv.textContent = 'Login successful! Redirecting...';
@@ -552,15 +420,11 @@ router.get("/admin/login", (req, res) => {
                         } else {
                             messageDiv.textContent = data.message || 'Login failed';
                             messageDiv.className = 'message error';
-                            loginBtn.disabled = false;
-                            loginBtn.textContent = 'Login';
                         }
                     } catch (error) {
                         messageDiv.textContent = 'Connection error. Please try again.';
                         messageDiv.className = 'message error';
                         console.error('Login error:', error);
-                        loginBtn.disabled = false;
-                        loginBtn.textContent = 'Login';
                     }
                 });
             </script>
@@ -575,7 +439,6 @@ router.post("/api/auth/login", async (req, res) => {
     
     console.log('🔐 Admin login attempt:', username);
     console.log('   Password length:', password ? password.length : 0);
-    console.log('   Password value:', password); // Be careful with this in production
 
     if (!supabase || !dbConnected) {
         console.log('❌ Database not connected');
@@ -593,6 +456,7 @@ router.post("/api/auth/login", async (req, res) => {
     }
 
     try {
+        // Query admin user using Supabase
         const { data: admins, error } = await supabase
             .from('admin_users')
             .select('*')
@@ -617,7 +481,6 @@ router.post("/api/auth/login", async (req, res) => {
 
         const admin = admins[0];
         console.log('   Found admin:', admin.email);
-        console.log('   Stored password hash length:', admin.password.length);
         
         if (admin.security_code !== security_code) {
             console.log('   Security code mismatch');
@@ -717,6 +580,7 @@ router.get("/api/admin/check-admin", async (req, res) => {
         
         const admin = admins[0];
         
+        // Test password verification
         const testPassword = 'piotech@52gmail.com';
         const isValid = await bcrypt.compare(testPassword, admin.password);
         
@@ -727,14 +591,14 @@ router.get("/api/admin/check-admin", async (req, res) => {
             role: admin.role,
             is_active: admin.is_active,
             passwordHashLength: admin.password.length,
+            passwordHashPrefix: admin.password.substring(0, 30) + '...',
             testPassword: testPassword,
             testPasswordLength: testPassword.length,
             passwordVerification: {
                 testPassword: testPassword,
                 isValid: isValid
             },
-            message: isValid ? '✅ Password is correct!' : '❌ Password hash does not match!',
-            tip: isValid ? 'Your password is correct. Make sure you are typing the full password: piotech@52gmail.com' : 'The stored password hash does not match. You may need to reset the admin password.'
+            message: isValid ? '✅ Password is correct!' : '❌ Password hash does not match!'
         });
     } catch (err) {
         console.error('Debug error:', err);
@@ -742,7 +606,7 @@ router.get("/api/admin/check-admin", async (req, res) => {
     }
 });
 
-// ========== FIX ADMIN PASSWORD ROUTE ==========
+// ========== FIX ADMIN PASSWORD ROUTE - ADDED ==========
 router.get("/api/admin/fix-password", async (req, res) => {
     if (!supabase || !dbConnected) {
         return res.json({ success: false, message: 'Database not connected' });
@@ -752,9 +616,13 @@ router.get("/api/admin/fix-password", async (req, res) => {
         const adminEmail = 'piotech52@gmail.com';
         const correctPassword = 'piotech@52gmail.com';
         
+        // Hash the password
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(correctPassword, saltRounds);
         
+        console.log('🔑 New password hash:', hashedPassword);
+        
+        // Update the password
         const { error: updateError } = await supabase
             .from('admin_users')
             .update({ password: hashedPassword })
@@ -764,20 +632,22 @@ router.get("/api/admin/fix-password", async (req, res) => {
             return res.json({ success: false, error: updateError.message });
         }
         
-        const { data: admins } = await supabase
+        // Verify it worked
+        const { data: admin } = await supabase
             .from('admin_users')
             .select('password')
             .eq('email', adminEmail)
             .single();
         
-        const isValid = await bcrypt.compare(correctPassword, admins.password);
+        const isValid = await bcrypt.compare(correctPassword, admin.password);
         
         res.json({
             success: true,
-            message: 'Admin password reset',
-            passwordSet: correctPassword,
-            verificationResult: isValid ? '✅ Password verified!' : '❌ Verification failed!',
-            newHashLength: admins.password.length
+            message: 'Admin password has been reset',
+            newPassword: correctPassword,
+            newHash: hashedPassword,
+            verificationResult: isValid ? '✅ Password verified! You can now login.' : '❌ Verification failed!',
+            note: 'Use password: piotech@52gmail.com (21 characters)'
         });
     } catch (err) {
         console.error('Fix password error:', err);
@@ -792,14 +662,17 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
     }
     
     try {
+        // Get total users
         const { count: totalUsers } = await supabase
             .from('jambuser')
             .select('*', { count: 'exact', head: true });
         
+        // Get total payments
         const { count: totalPayments } = await supabase
             .from('user_payments')
             .select('*', { count: 'exact', head: true });
         
+        // Get total revenue
         const { data: revenueData } = await supabase
             .from('user_payments')
             .select('amount')
@@ -807,6 +680,7 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
         
         const totalRevenue = revenueData?.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0) || 0;
         
+        // Get unread notifications
         const { count: unreadNotifications } = await supabase
             .from('payment_notifications')
             .select('*', { count: 'exact', head: true })
@@ -949,6 +823,7 @@ router.get("/api/admin/users", checkAdminAuth, async (req, res) => {
         
         if (error) throw error;
         
+        // Get statistics
         const { count: totalUsers } = await supabase.from('jambuser').select('*', { count: 'exact', head: true });
         const { count: activeUsers } = await supabase.from('jambuser').select('*', { count: 'exact', head: true }).eq('is_activated', '1');
         const { count: students } = await supabase.from('jambuser').select('*', { count: 'exact', head: true }).eq('role', 'student');
@@ -1010,7 +885,7 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
                                             '<button class="btn btn-deactivate" onclick="deactivateUser(' + user.id + ')">Deactivate</button>'
                                         }
                                     </div>
-                                 </tr>
+                                  </tr>
                             \`;
                         });
                         html += '</table>';
@@ -1088,6 +963,7 @@ router.get("/api/admin/payments", checkAdminAuth, async (req, res) => {
         
         if (error) throw error;
         
+        // Get user names
         const { data: users } = await supabase.from('jambuser').select('email, userName');
         const userMap = {};
         users?.forEach(u => { userMap[u.email] = u.userName; });
@@ -1123,7 +999,7 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
                     const response = await fetch('/api/admin/payments');
                     const data = await response.json();
                     if (data.success && data.payments) {
-                        let html = ' <tr><th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th></tr>';
+                        let html = ' 60% <th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th>  </tr';
                         data.payments.forEach(p => {
                             html += \`<tr><td>\${p.userName || p.email}</td><td>₦\${p.amount}</td><td>\${p.payment_method}</td><td>\${p.status}</td><td>\${new Date(p.created_at).toLocaleDateString()}</td></tr>\`;
                         });
@@ -1156,6 +1032,7 @@ router.post("/send", async (req, res) => {
     const activationCode = generateActivationCode();
     
     try {
+        // Check if user has made payment
         const { data: payments, error: paymentError } = await supabase
             .from('user_payments')
             .select('*')
@@ -1167,6 +1044,7 @@ router.post("/send", async (req, res) => {
             return res.status(400).json({ success: false, message: "User has not made payment" });
         }
         
+        // Check if user exists
         const { data: users, error: userError } = await supabase
             .from('jambuser')
             .select('*')
@@ -1178,6 +1056,7 @@ router.post("/send", async (req, res) => {
             return res.status(400).json({ success: false, message: "User not found" });
         }
         
+        // Update activation code
         const { error: updateError } = await supabase
             .from('jambuser')
             .update({ activationCode: activationCode })
@@ -1185,6 +1064,7 @@ router.post("/send", async (req, res) => {
         
         if (updateError) throw updateError;
         
+        // Send email
         const emailContent = `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <div style="background: linear-gradient(135deg, #1a237e 0%, #311b92 100%); padding: 30px; text-align: center;">
