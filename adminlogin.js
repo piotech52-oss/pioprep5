@@ -1,4 +1,650 @@
 const express = require('express');
+const { Pool } = require('pg'); // PostgreSQL instead of mysql2
+const bcrypt = require('bcrypt');
+const session = require('express-session');
+const connectPgSimple = require('connect-pg-simple'); // PostgreSQL session store
+const cors = require('cors');
+const path = require('path');
+require('dotenv').config();
+
+const app = express();
+
+// =========================
+// MIDDLEWARE CONFIGURATION
+// =========================
+
+app.use(cors({
+    origin: process.env.NODE_ENV === 'production' 
+        ? process.env.VERCEL_URL 
+        : 'http://localhost:3000',
+    credentials: true
+}));
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// =========================
+// POSTGRESQL CONFIGURATION (Supabase) - FIXED
+// =========================
+
+// Function to encode password in connection string
+function encodeDatabaseUrl(url) {
+    if (!url) return url;
+    // Match password part between : and @
+    return url.replace(/:(.*?)@/, (match, p1) => {
+        // If password contains special characters, encode it
+        if (p1.includes('@') || p1.includes('#') || p1.includes('!')) {
+            return ':' + encodeURIComponent(p1) + '@';
+        }
+        return match;
+    });
+}
+
+// Get and fix the connection string
+const databaseUrl = encodeDatabaseUrl(process.env.DATABASE_URL);
+
+// Supabase PostgreSQL configuration with increased timeout
+const pool = new Pool({
+    connectionString: databaseUrl,
+    ssl: {
+        rejectUnauthorized: false,
+        sslmode: 'require'
+    },
+    max: 10, // Reduced max connections
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000, // Increased to 10 seconds
+});
+
+// Global connection status
+let dbConnected = false;
+let connectionChecked = false;
+
+// Better connection test
+async function testDatabaseConnection() {
+    try {
+        const client = await pool.connect();
+        console.log('✅ Connected to Supabase PostgreSQL!');
+        dbConnected = true;
+        connectionChecked = true;
+        client.release();
+        
+        // Test a simple query
+        await client.query('SELECT 1');
+        console.log('✅ Database queries working');
+        
+        return true;
+    } catch (err) {
+        console.error('❌ Error connecting to Supabase PostgreSQL:', err.message);
+        dbConnected = false;
+        connectionChecked = true;
+        
+        if (err.message.includes('ECONNREFUSED')) {
+            console.log('📌 Connection refused - check:');
+            console.log('   1. Your DATABASE_URL in .env file');
+            console.log('   2. If password contains @, replace with %40');
+            console.log('   3. Your IP is allowed in Supabase dashboard');
+            console.log('   4. The database is not paused');
+        }
+        return false;
+    }
+}
+
+// Test connection immediately
+testDatabaseConnection();
+
+// Retry connection every 30 seconds
+setInterval(testDatabaseConnection, 30000);
+
+// Middleware to check database status
+app.use((req, res, next) => {
+    req.dbConnected = dbConnected;
+    req.connectionChecked = connectionChecked;
+    next();
+});
+
+// =========================
+// SESSION CONFIGURATION (PostgreSQL) - WITH FALLBACK
+// =========================
+
+let sessionStore;
+try {
+    const PgSession = connectPgSimple(session);
+    if (dbConnected) {
+        sessionStore = new PgSession({
+            pool: pool,
+            tableName: 'user_sessions',
+            createTableIfMissing: true
+        });
+    }
+} catch (error) {
+    console.log('⚠️ Session store using memory (PostgreSQL unavailable)');
+}
+
+app.use(session({
+    store: sessionStore,
+    secret: process.env.SESSION_SECRET || 'your-secret-key-change-this',
+    resave: false,
+    saveUninitialized: true,
+    cookie: {
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax'
+    }
+}));
+
+// =========================
+// UTILITY FUNCTIONS
+// =========================
+
+function isRealisticEmail(email) {
+    if (!email) return false;
+    email = email.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) return false;
+    if (email.includes("..")) return false;
+    if (email.length < 6) return false;
+    const tldRegex = /\.(com|net|org|edu|gov|io|ng|co|info|biz|me|tech)$/;
+    if (!tldRegex.test(email)) return false;
+    return true;
+};
+
+const requireLogin = (req, res, next) => {
+    if (!req.session || !req.session.isLoggedIn) {
+        return res.status(401).json({ error: 'Please login first' });
+    }
+    next();
+};
+
+// =========================
+// DATABASE INITIALIZATION
+// =========================
+
+async function initializeDatabase() {
+    if (!dbConnected) {
+        console.log('⏳ Skipping database initialization - not connected');
+        return;
+    }
+    
+    try {
+        // Check if jambuser table exists
+        const result = await pool.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'jambuser'
+            );
+        `);
+        
+        if (!result.rows[0].exists) {
+            console.log('⚠️ jambuser table does not exist. Creating it...');
+            
+            await pool.query(`
+                CREATE TABLE jambuser (
+                    id SERIAL PRIMARY KEY,
+                    "userName" VARCHAR(100) NOT NULL,
+                    email VARCHAR(255) NOT NULL UNIQUE,
+                    password VARCHAR(255) NOT NULL,
+                    role VARCHAR(50) DEFAULT 'student',
+                    is_activated BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+            
+            console.log('✅ jambuser table created successfully');
+        } else {
+            const countResult = await pool.query("SELECT COUNT(*) as count FROM jambuser");
+            console.log(`📊 Database has ${countResult.rows[0].count} existing users`);
+        }
+        
+    } catch (error) {
+        console.error('❌ Database initialization error:', error.message);
+    }
+}
+
+// Call initialization when connected
+if (dbConnected) {
+    initializeDatabase();
+}
+
+// =========================
+// API ROUTES
+// =========================
+
+// Health check endpoint
+app.get('/api/health', async (req, res) => {
+    const status = {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        service: 'JAMB CBT Authentication',
+        database: {
+            connected: dbConnected,
+            type: 'PostgreSQL (Supabase)',
+            checked: connectionChecked
+        }
+    };
+    
+    if (dbConnected) {
+        try {
+            const dbTest = await pool.query('SELECT NOW() as time');
+            status.database.time = dbTest.rows[0].time;
+        } catch (error) {
+            status.database.error = error.message;
+        }
+    }
+    
+    res.json(status);
+});
+
+// Check session status
+app.get('/api/session', (req, res) => {
+    if (req.session && req.session.isLoggedIn) {
+        res.json({
+            loggedIn: true,
+            user: {
+                id: req.session.userId,
+                userName: req.session.userName,
+                email: req.session.email,
+                is_activated: req.session.is_activated
+            }
+        });
+    } else {
+        res.json({ loggedIn: false });
+    }
+});
+
+// Register user - WITH PROPER ERROR HANDLING
+app.post('/api/register', async (req, res) => {
+    let { userName, email, password } = req.body;
+
+    console.log('📝 Registration attempt:', { userName, email });
+
+    // Check if database is connected
+    if (!dbConnected) {
+        console.log('❌ Database not connected');
+        return res.status(503).json({ 
+            error: "Database is currently unavailable. Please try again in a few moments.",
+            details: "Unable to connect to Supabase PostgreSQL"
+        });
+    }
+
+    try {
+        // Basic validation
+        if (!userName || !email || !password) {
+            console.log('❌ Missing fields');
+            return res.status(400).json({ error: "All fields are required" });
+        }
+
+        if (!isRealisticEmail(email)) {
+            console.log('❌ Invalid email format:', email);
+            return res.status(400).json({ error: "Invalid email format" });
+        }
+
+        // Trim inputs
+        userName = userName.trim();
+        email = email.trim().toLowerCase();
+        password = password.trim();
+
+        // Check password length
+        if (password.length < 6) {
+            return res.status(400).json({ error: "Password must be at least 6 characters" });
+        }
+
+        // Check if user exists
+        console.log('🔍 Checking if user exists:', email);
+        
+        const existingUsers = await pool.query(
+            "SELECT id FROM jambuser WHERE email = $1",
+            [email]
+        );
+
+        console.log('📊 Existing user check result:', existingUsers.rows);
+
+        if (existingUsers.rows.length > 0) {
+            console.log('❌ Email already exists:', email);
+            return res.status(400).json({ error: "Email already registered" });
+        }
+
+        // Hash password
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+        console.log('🔐 Password hashed successfully');
+
+        // Insert new user
+        const result = await pool.query(
+            "INSERT INTO jambuser (\"userName\", email, password, role, is_activated) VALUES ($1, $2, $3, $4, $5) RETURNING id, \"userName\", email",
+            [userName, email, hashedPassword, 'student', false]
+        );
+
+        console.log('✅ Insert result:', result.rows[0]);
+        console.log(`✅ New user registered: ${email} (ID: ${result.rows[0].id})`);
+        
+        return res.json({
+            success: true,
+            message: "Registration successful! Please login."
+        });
+
+    } catch (error) {
+        console.error('❌ Registration error:', error.message);
+        
+        // Handle specific PostgreSQL errors
+        if (error.code === '23505') {
+            return res.status(400).json({ error: "Email already registered" });
+        } else if (error.code === '42703') {
+            return res.status(500).json({ error: "Database column mismatch. Check server logs." });
+        } else if (error.code === 'ECONNREFUSED' || error.message.includes('ECONNREFUSED')) {
+            dbConnected = false;
+            return res.status(503).json({ 
+                error: "Database connection lost. Please try again."
+            });
+        }
+        
+        return res.status(500).json({ error: "Server error during registration" });
+    }
+});
+
+// Login user - FIXED to check for '1' as string
+app.post('/api/login', async (req, res) => {
+    const { email, password } = req.body;
+
+    console.log(`🔐 Login attempt for: ${email}`);
+
+    // Check if database is connected
+    if (!dbConnected) {
+        return res.status(503).json({ 
+            error: "Database is currently unavailable. Please try again later."
+        });
+    }
+
+    try {
+        // Basic validation
+        if (!email || !password) {
+            return res.status(400).json({ error: "Email and password are required" });
+        }
+
+        const cleanEmail = email.trim().toLowerCase();
+        
+        // Find user in database
+        const userResult = await pool.query(
+            "SELECT * FROM jambuser WHERE email = $1",
+            [cleanEmail]
+        );
+
+        console.log(`📊 Database returned ${userResult.rows.length} results`);
+
+        if (userResult.rows.length === 0) {
+            console.log('❌ User not found:', cleanEmail);
+            return res.status(401).json({ error: "Invalid email or password" });
+        }
+
+        const user = userResult.rows[0];
+        console.log('✅ User found in database:', {
+            id: user.id,
+            email: user.email,
+            userName: user.userName,
+            is_activated: user.is_activated
+        });
+
+        // Check password
+        if (!user.password) {
+            return res.status(500).json({ error: "Account error: No password set" });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        
+        if (!isMatch) {
+            console.log('❌ Password does not match for:', user.email);
+            return res.status(401).json({ error: "Incorrect password" });
+        }
+
+        console.log('✅ Password correct for:', user.email);
+        
+        // FIXED: Check activation status for VARCHAR(1) column storing '1'
+        const isActivated = user.is_activated === '1' || user.is_activated === true;
+
+        // Store user in session
+        req.session.userId = user.id;
+        req.session.email = user.email;
+        req.session.userName = user.userName;
+        req.session.isLoggedIn = true;
+        req.session.is_activated = isActivated;
+
+        return res.json({
+            success: true,
+            message: "Login successful!",
+            user: {
+                id: user.id,
+                userName: user.userName,
+                email: user.email,
+                is_activated: isActivated
+            },
+            redirectTo: isActivated ? "/home.html" : "/homeforall.html"
+        });
+
+    } catch (error) {
+        console.error('Login error:', error.message);
+        if (error.code === 'ECONNREFUSED' || error.message.includes('ECONNREFUSED')) {
+            dbConnected = false;
+            return res.status(503).json({ 
+                error: "Database connection lost. Please try again."
+            });
+        }
+        return res.status(500).json({ error: "Server error during authentication" });
+    }
+});
+
+// =========================
+// QUESTION ROUTES
+// =========================
+
+// Get accounting questions
+app.get('/api/questions/accounting', async (req, res) => {
+    if (!dbConnected) {
+        return res.status(503).json({ error: "Database unavailable" });
+    }
+    
+    try {
+        const { year, limit = 50 } = req.query;
+        
+        let query = 'SELECT * FROM acct_questions';
+        const params = [];
+        
+        if (year) {
+            query += ' WHERE year = $1';
+            params.push(year);
+        }
+        
+        query += ' ORDER BY id LIMIT $' + (params.length + 1);
+        params.push(parseInt(limit));
+        
+        const result = await pool.query(query, params);
+        
+        res.json({
+            success: true,
+            count: result.rows.length,
+            questions: result.rows
+        });
+    } catch (error) {
+        console.error('Error fetching accounting questions:', error.message);
+        res.status(500).json({ error: "Server error" });
+    }
+});
+
+// Get biology questions
+app.get('/api/questions/biology', async (req, res) => {
+    if (!dbConnected) {
+        return res.status(503).json({ error: "Database unavailable" });
+    }
+    
+    try {
+        const result = await pool.query(
+            'SELECT * FROM bio_questions ORDER BY id LIMIT $1',
+            [req.query.limit || 50]
+        );
+        
+        res.json({
+            success: true,
+            count: result.rows.length,
+            questions: result.rows
+        });
+    } catch (error) {
+        console.error('Error fetching biology questions:', error.message);
+        res.status(500).json({ error: "Server error" });
+    }
+});
+
+// Get chemistry questions
+app.get('/api/questions/chemistry', async (req, res) => {
+    if (!dbConnected) {
+        return res.status(503).json({ error: "Database unavailable" });
+    }
+    
+    try {
+        const result = await pool.query(
+            'SELECT * FROM chem_questions ORDER BY id LIMIT $1',
+            [req.query.limit || 50]
+        );
+        
+        res.json({
+            success: true,
+            count: result.rows.length,
+            questions: result.rows
+        });
+    } catch (error) {
+        console.error('Error fetching chemistry questions:', error.message);
+        res.status(500).json({ error: "Server error" });
+    }
+});
+
+// Get questions by subject
+app.get('/api/questions/:subject', async (req, res) => {
+    if (!dbConnected) {
+        return res.status(503).json({ error: "Database unavailable" });
+    }
+    
+    try {
+        const { subject } = req.params;
+        const { year, topic, limit = 20 } = req.query;
+        
+        const validSubjects = ['accounting', 'biology', 'chemistry', 'agriculture'];
+        if (!validSubjects.includes(subject.toLowerCase())) {
+            return res.status(400).json({ error: "Invalid subject" });
+        }
+        
+        const tableName = `${subject}_questions`;
+        let query = `SELECT * FROM ${tableName}`;
+        const params = [];
+        let paramCount = 0;
+        
+        const conditions = [];
+        if (year) {
+            paramCount++;
+            conditions.push(`year = $${paramCount}`);
+            params.push(year);
+        }
+        if (topic) {
+            paramCount++;
+            conditions.push(`topic ILIKE $${paramCount}`);
+            params.push(`%${topic}%`);
+        }
+        
+        if (conditions.length > 0) {
+            query += ' WHERE ' + conditions.join(' AND ');
+        }
+        
+        paramCount++;
+        query += ` ORDER BY id LIMIT $${paramCount}`;
+        params.push(parseInt(limit));
+        
+        const result = await pool.query(query, params);
+        
+        res.json({
+            success: true,
+            subject: subject,
+            count: result.rows.length,
+            questions: result.rows
+        });
+        
+    } catch (error) {
+        console.error('Error fetching questions:', error.message);
+        res.status(500).json({ error: "Server error" });
+    }
+});
+
+// Profile route
+app.get('/api/profile', requireLogin, async (req, res) => {
+    if (!dbConnected) {
+        return res.status(503).json({ error: "Database unavailable" });
+    }
+    
+    try {
+        const result = await pool.query(
+            "SELECT id, \"userName\", email, role, is_activated, created_at FROM jambuser WHERE id = $1",
+            [req.session.userId]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: "User not found" });
+        }
+        
+        res.json({
+            success: true,
+            user: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Profile fetch error:', error.message);
+        res.status(500).json({ error: "Server error" });
+    }
+});
+
+// Logout
+app.post('/api/logout', (req, res) => {
+    req.session.destroy((err) => {
+        if (err) {
+            return res.status(500).json({ error: "Could not logout" });
+        }
+        res.json({ success: true, message: "Logged out successfully" });
+    });
+});
+
+// =========================
+// STATIC FILE SERVING
+// =========================
+
+app.use(express.static('public'));
+app.use('/scripts', express.static('scripts'));
+app.use('/styles', express.static('styles'));
+app.use('/images', express.static('images'));
+
+// =========================
+// SERVER STARTUP
+// =========================
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log('\n' + '='.repeat(50));
+    console.log('🎯 JAMB CBT Authentication Server (PostgreSQL)');
+    console.log('='.repeat(50));
+    console.log(`✅ Server: http://localhost:${PORT}`);
+    console.log(`📊 Database: ${dbConnected ? '✅ Connected' : '❌ Disconnected'}`);
+    console.log('='.repeat(50));
+    console.log('\n📚 Available Routes:');
+    console.log('   • GET  /api/health                   - Health check');
+    console.log('   • GET  /api/session                  - Check session');
+    console.log('   • POST /api/register                 - Register');
+    console.log('   • POST /api/login                    - Login');
+    console.log('   • POST /api/logout                   - Logout');
+    console.log('   • GET  /api/questions/accounting     - Accounting Qs');
+    console.log('   • GET  /api/questions/biology        - Biology Qs');
+    console.log('   • GET  /api/questions/chemistry      - Chemistry Qs');
+    console.log('   • GET  /api/questions/:subject       - Questions by subject');
+    console.log('\n⚡ Status: Ready');
+    console.log('='.repeat(50) + '\n');
+});
+
+// Export for Vercel
+module.exports = app;   u can see how i used to compare my password used the same way here const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
@@ -80,6 +726,7 @@ async function createAdminTable() {
         if (checkError && checkError.code === '42P01') {
             console.log('📝 Creating admin_users table...');
             
+            // Create table using raw SQL via Supabase RPC (if available)
             const createTableSQL = `
                 CREATE TABLE IF NOT EXISTS admin_users (
                     id SERIAL PRIMARY KEY,
@@ -98,6 +745,7 @@ async function createAdminTable() {
                 )
             `;
             
+            // Try to execute SQL (this may require pg_execute function)
             const { error: createError } = await supabase.rpc('exec_sql', { sql: createTableSQL });
             
             if (createError) {
@@ -165,6 +813,7 @@ async function createDefaultAdmin() {
         const adminSecurityCode = 'piotech52@gmail.com';
         const adminFullName = 'Pio Tech Administrator';
         
+        // Check if admin exists
         const { data: existingAdmin, error: checkError } = await supabase
             .from('admin_users')
             .select('id')
@@ -300,7 +949,7 @@ async function sendPaymentEmailNotification(paymentData) {
 
 // ========== ADMIN LOGIN ROUTES ==========
 
-// Admin login page - FIXED with better password handling
+// Admin login page
 router.get("/admin/login", (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -308,106 +957,27 @@ router.get("/admin/login", (req, res) => {
         <head>
             <title>Admin Login</title>
             <style>
-                body { 
-                    font-family: Arial; 
-                    padding: 50px; 
-                    text-align: center; 
+                body { font-family: Arial; padding: 50px; text-align: center; 
                     background: linear-gradient(135deg, #1a237e 0%, #311b92 100%);
-                    height: 100vh; 
-                    display: flex; 
-                    justify-content: center; 
-                    align-items: center; 
-                    margin: 0;
-                }
-                .login-box { 
-                    background: white; 
-                    padding: 40px; 
-                    border-radius: 10px; 
-                    box-shadow: 0 15px 35px rgba(0,0,0,0.3); 
-                    width: 100%; 
-                    max-width: 500px;
-                }
-                h1 { 
-                    color: #1a237e; 
-                    margin-bottom: 30px;
-                }
-                input { 
-                    width: 100%; 
-                    padding: 12px; 
-                    margin: 10px 0; 
-                    border: 2px solid #ddd; 
-                    border-radius: 5px; 
-                    font-size: 16px;
-                    box-sizing: border-box;
-                }
-                input:focus {
-                    outline: none;
-                    border-color: #1a237e;
-                }
-                button { 
-                    width: 100%; 
-                    padding: 12px; 
-                    background: #1a237e; 
-                    color: white; 
-                    border: none; 
-                    border-radius: 5px; 
-                    font-size: 16px; 
-                    cursor: pointer; 
-                    margin-top: 20px;
-                }
-                button:hover { 
-                    background: #311b92;
-                }
-                .back { 
-                    display: inline-block; 
-                    margin-top: 20px; 
-                    color: #1a237e; 
-                    text-decoration: none;
-                }
-                .credentials { 
-                    margin-top: 20px; 
-                    padding: 15px; 
-                    background: #f8f9fa; 
-                    border-radius: 5px; 
-                    font-size: 14px; 
-                    text-align: left;
-                }
-                .credentials code {
-                    background: #e9ecef;
-                    padding: 2px 6px;
-                    border-radius: 3px;
-                    word-break: break-all;
-                    font-size: 13px;
-                }
-                .message {
-                    margin-top: 15px;
-                    padding: 10px;
-                    border-radius: 5px;
-                }
-                .message.error {
-                    background: #f8d7da;
-                    color: #721c24;
-                    border: 1px solid #f5c6cb;
-                }
-                .message.success {
-                    background: #d4edda;
-                    color: #155724;
-                    border: 1px solid #c3e6cb;
-                }
-                .status {
-                    margin-top: 10px;
-                    padding: 8px;
-                    border-radius: 5px;
-                    font-size: 12px;
-                }
-                .status.connected {
-                    background: #d4edda;
-                    color: #155724;
-                }
-                .status.disconnected {
-                    background: #f8d7da;
-                    color: #721c24;
-                }
+                    height: 100vh; display: flex; justify-content: center; align-items: center; margin: 0; }
+                .login-box { background: white; padding: 40px; border-radius: 10px; 
+                    box-shadow: 0 15px 35px rgba(0,0,0,0.3); width: 100%; max-width: 400px; }
+                h1 { color: #1a237e; margin-bottom: 30px; }
+                input { width: 100%; padding: 12px; margin: 10px 0; border: 2px solid #ddd; 
+                    border-radius: 5px; font-size: 16px; box-sizing: border-box; }
+                button { width: 100%; padding: 12px; background: #1a237e; color: white; 
+                    border: none; border-radius: 5px; font-size: 16px; cursor: pointer; margin-top: 20px; }
+                button:hover { background: #311b92; }
+                .back { display: inline-block; margin-top: 20px; color: #1a237e; text-decoration: none; }
+                .credentials { margin-top: 20px; padding: 15px; background: #f8f9fa; 
+                    border-radius: 5px; font-size: 14px; text-align: left; }
+                .credentials code { background: #e9ecef; padding: 2px 6px; border-radius: 3px; }
+                .message { margin-top: 15px; padding: 10px; border-radius: 5px; }
+                .message.error { background: #f8d7da; color: #721c24; }
+                .message.success { background: #d4edda; color: #155724; }
+                .status { margin-top: 10px; padding: 8px; border-radius: 5px; font-size: 12px; }
+                .status.connected { background: #d4edda; color: #155724; }
+                .status.disconnected { background: #f8d7da; color: #721c24; }
                 .debug-info {
                     margin-top: 10px;
                     font-size: 12px;
@@ -416,29 +986,17 @@ router.get("/admin/login", (req, res) => {
                     border-top: 1px solid #eee;
                     padding-top: 10px;
                 }
-                .password-hint {
-                    font-size: 11px;
-                    color: #999;
-                    margin-top: -8px;
-                    margin-bottom: 10px;
-                    text-align: left;
-                }
             </style>
         </head>
         <body>
             <div class="login-box">
                 <h1>🔐 Admin Login</h1>
                 <div id="dbStatus" class="status">Checking database connection...</div>
-                <form id="loginForm" onsubmit="return false;">
-                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required value="piotech52@gmail.com">
-                    <input type="password" id="password" placeholder="Password" autocomplete="current-password" required style="font-family: monospace;">
-                    <div class="password-hint">
-                        <strong>Full password:</strong> piotech@52gmail.com (21 characters)
-                        <br>
-                        <span id="passwordWarning" style="color: red; display: none;">⚠️ Password must be exactly 21 characters!</span>
-                    </div>
-                    <input type="text" id="securityCode" placeholder="Security Code" required value="piotech52@gmail.com">
-                    <button type="submit" id="loginBtn">Login</button>
+                <form id="loginForm">
+                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required>
+                    <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
+                    <input type="text" id="securityCode" placeholder="Security Code" required>
+                    <button type="submit">Login</button>
                 </form>
                 <div id="message"></div>
                 <div class="credentials">
@@ -448,34 +1006,11 @@ router.get("/admin/login", (req, res) => {
                     Security Code: <code>piotech52@gmail.com</code>
                 </div>
                 <div class="debug-info">
-                    <strong>Debug:</strong> <span id="passwordLength">0</span> characters typed<br>
-                    <a href="/api/admin/check-admin" target="_blank" style="color: #1a237e;">🔍 Check Admin Password in Database</a>
+                    <a href="/api/admin/check-admin" target="_blank" style="color: #1a237e;">Check Admin Password</a>
                 </div>
                 <a href="/" class="back">← Back to Home</a>
             </div>
             <script>
-                const passwordInput = document.getElementById('password');
-                const passwordLengthSpan = document.getElementById('passwordLength');
-                const passwordWarning = document.getElementById('passwordWarning');
-                
-                passwordInput.addEventListener('input', function() {
-                    const len = this.value.length;
-                    passwordLengthSpan.textContent = len;
-                    if (len === 21) {
-                        passwordLengthSpan.style.color = 'green';
-                        passwordLengthSpan.style.fontWeight = 'bold';
-                        passwordWarning.style.display = 'none';
-                    } else {
-                        passwordLengthSpan.style.color = 'red';
-                        passwordLengthSpan.style.fontWeight = 'normal';
-                        if (len > 0) {
-                            passwordWarning.style.display = 'block';
-                        } else {
-                            passwordWarning.style.display = 'none';
-                        }
-                    }
-                });
-                
                 async function checkDBStatus() {
                     try {
                         const response = await fetch('/api/admin/debug-db');
@@ -499,19 +1034,10 @@ router.get("/admin/login", (req, res) => {
                 
                 document.getElementById('loginForm').addEventListener('submit', async (e) => {
                     e.preventDefault();
-                    
                     const username = document.getElementById('username').value.trim();
                     const password = document.getElementById('password').value;
                     const securityCode = document.getElementById('securityCode').value.trim();
                     const messageDiv = document.getElementById('message');
-                    const loginBtn = document.getElementById('loginBtn');
-                    
-                    console.log('Login attempt:', { 
-                        username, 
-                        passwordLength: password.length, 
-                        passwordValue: password,
-                        securityCode 
-                    });
                     
                     if (!username || !password || !securityCode) {
                         messageDiv.textContent = 'All fields are required';
@@ -519,30 +1045,17 @@ router.get("/admin/login", (req, res) => {
                         return;
                     }
                     
-                    if (password.length !== 21) {
-                        messageDiv.textContent = 'Password must be exactly 21 characters. Full password: piotech@52gmail.com (you typed ' + password.length + ' chars)';
-                        messageDiv.className = 'message error';
-                        return;
-                    }
-                    
                     messageDiv.textContent = 'Logging in...';
                     messageDiv.className = 'message success';
-                    loginBtn.disabled = true;
-                    loginBtn.textContent = 'Logging in...';
                     
                     try {
                         const response = await fetch('/api/auth/login', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ 
-                                username: username, 
-                                password: password, 
-                                security_code: securityCode 
-                            })
+                            body: JSON.stringify({ username, password, security_code: securityCode })
                         });
                         
                         const data = await response.json();
-                        console.log('Login response:', data);
                         
                         if (data.success) {
                             messageDiv.textContent = 'Login successful! Redirecting...';
@@ -552,15 +1065,11 @@ router.get("/admin/login", (req, res) => {
                         } else {
                             messageDiv.textContent = data.message || 'Login failed';
                             messageDiv.className = 'message error';
-                            loginBtn.disabled = false;
-                            loginBtn.textContent = 'Login';
                         }
                     } catch (error) {
                         messageDiv.textContent = 'Connection error. Please try again.';
                         messageDiv.className = 'message error';
                         console.error('Login error:', error);
-                        loginBtn.disabled = false;
-                        loginBtn.textContent = 'Login';
                     }
                 });
             </script>
@@ -575,7 +1084,6 @@ router.post("/api/auth/login", async (req, res) => {
     
     console.log('🔐 Admin login attempt:', username);
     console.log('   Password length:', password ? password.length : 0);
-    console.log('   Password value:', password); // Be careful with this in production
 
     if (!supabase || !dbConnected) {
         console.log('❌ Database not connected');
@@ -593,6 +1101,7 @@ router.post("/api/auth/login", async (req, res) => {
     }
 
     try {
+        // Query admin user using Supabase
         const { data: admins, error } = await supabase
             .from('admin_users')
             .select('*')
@@ -617,7 +1126,6 @@ router.post("/api/auth/login", async (req, res) => {
 
         const admin = admins[0];
         console.log('   Found admin:', admin.email);
-        console.log('   Stored password hash length:', admin.password.length);
         
         if (admin.security_code !== security_code) {
             console.log('   Security code mismatch');
@@ -627,7 +1135,6 @@ router.post("/api/auth/login", async (req, res) => {
             });
         }
 
-        // ========== BCrypt COMPARISON - SAME AS YOUR POSTGRESQL VERSION ==========
         const isPasswordValid = await bcrypt.compare(password, admin.password);
         console.log('   Password valid:', isPasswordValid);
         
@@ -696,7 +1203,7 @@ router.get("/api/admin/debug-db", async (req, res) => {
     });
 });
 
-// DEBUG ROUTE TO CHECK ADMIN PASSWORD
+// DEBUG ROUTE TO CHECK ADMIN PASSWORD - ADDED
 router.get("/api/admin/check-admin", async (req, res) => {
     if (!supabase || !dbConnected) {
         return res.json({ success: false, message: 'Database not connected' });
@@ -718,8 +1225,8 @@ router.get("/api/admin/check-admin", async (req, res) => {
         
         const admin = admins[0];
         
+        // Test password verification
         const testPassword = 'piotech@52gmail.com';
-        // ========== BCrypt COMPARISON - SAME AS YOUR POSTGRESQL VERSION ==========
         const isValid = await bcrypt.compare(testPassword, admin.password);
         
         res.json({
@@ -729,61 +1236,17 @@ router.get("/api/admin/check-admin", async (req, res) => {
             role: admin.role,
             is_active: admin.is_active,
             passwordHashLength: admin.password.length,
+            passwordHashPrefix: admin.password.substring(0, 30) + '...',
             testPassword: testPassword,
             testPasswordLength: testPassword.length,
             passwordVerification: {
                 testPassword: testPassword,
                 isValid: isValid
             },
-            message: isValid ? '✅ Password is correct!' : '❌ Password hash does not match!',
-            tip: isValid ? 'Your password is correct. Make sure you are typing the full password: piotech@52gmail.com' : 'The stored password hash does not match. You may need to reset the admin password.'
+            message: isValid ? '✅ Password is correct!' : '❌ Password hash does not match!'
         });
     } catch (err) {
         console.error('Debug error:', err);
-        res.json({ success: false, error: err.message });
-    }
-});
-
-// ========== FIX ADMIN PASSWORD ROUTE ==========
-router.get("/api/admin/fix-password", async (req, res) => {
-    if (!supabase || !dbConnected) {
-        return res.json({ success: false, message: 'Database not connected' });
-    }
-    
-    try {
-        const adminEmail = 'piotech52@gmail.com';
-        const correctPassword = 'piotech@52gmail.com';
-        
-        const saltRounds = 10;
-        const hashedPassword = await bcrypt.hash(correctPassword, saltRounds);
-        
-        const { error: updateError } = await supabase
-            .from('admin_users')
-            .update({ password: hashedPassword })
-            .eq('email', adminEmail);
-        
-        if (updateError) {
-            return res.json({ success: false, error: updateError.message });
-        }
-        
-        const { data: admins } = await supabase
-            .from('admin_users')
-            .select('password')
-            .eq('email', adminEmail)
-            .single();
-        
-        // ========== BCrypt COMPARISON - SAME AS YOUR POSTGRESQL VERSION ==========
-        const isValid = await bcrypt.compare(correctPassword, admins.password);
-        
-        res.json({
-            success: true,
-            message: 'Admin password reset',
-            passwordSet: correctPassword,
-            verificationResult: isValid ? '✅ Password verified!' : '❌ Verification failed!',
-            newHashLength: admins.password.length
-        });
-    } catch (err) {
-        console.error('Fix password error:', err);
         res.json({ success: false, error: err.message });
     }
 });
@@ -795,14 +1258,17 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
     }
     
     try {
+        // Get total users
         const { count: totalUsers } = await supabase
             .from('jambuser')
             .select('*', { count: 'exact', head: true });
         
+        // Get total payments
         const { count: totalPayments } = await supabase
             .from('user_payments')
             .select('*', { count: 'exact', head: true });
         
+        // Get total revenue
         const { data: revenueData } = await supabase
             .from('user_payments')
             .select('amount')
@@ -810,6 +1276,7 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
         
         const totalRevenue = revenueData?.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0) || 0;
         
+        // Get unread notifications
         const { count: unreadNotifications } = await supabase
             .from('payment_notifications')
             .select('*', { count: 'exact', head: true })
@@ -952,6 +1419,7 @@ router.get("/api/admin/users", checkAdminAuth, async (req, res) => {
         
         if (error) throw error;
         
+        // Get statistics
         const { count: totalUsers } = await supabase.from('jambuser').select('*', { count: 'exact', head: true });
         const { count: activeUsers } = await supabase.from('jambuser').select('*', { count: 'exact', head: true }).eq('is_activated', '1');
         const { count: students } = await supabase.from('jambuser').select('*', { count: 'exact', head: true }).eq('role', 'student');
@@ -997,26 +1465,26 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
                     const response = await fetch('/api/admin/users');
                     const data = await response.json();
                     if (data.success) {
-                        let html = ' 60% <th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th>  </tr';
+                        let html = ' <tr><th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th></tr>';
                         data.users.forEach(user => {
                             const isActive = user.is_activated === '1';
                             html += \`
-                                 water
-                                    <td>\${user.userName || 'N/A'} water
-                                    <td>\${user.email} water
-                                    <td class="status-\${isActive ? 'active' : 'inactive'}">\${isActive ? 'Active' : 'Inactive'} water
-                                    <td>\${user.activationCode || 'No code'} water
+                                <tr>
+                                    <td>\${user.userName || 'N/A'}</td>
+                                    <td>\${user.email}</td>
+                                    <td class="status-\${isActive ? 'active' : 'inactive'}">\${isActive ? 'Active' : 'Inactive'}</td>
+                                    <td>\${user.activationCode || 'No code'}</td>
                                     <td>
                                         <button class="btn btn-code" onclick="sendCode('\${user.email}')">Send Code</button>
                                         \${!isActive ? 
                                             '<button class="btn btn-activate" onclick="activateUser(' + user.id + ')">Activate</button>' : 
                                             '<button class="btn btn-deactivate" onclick="deactivateUser(' + user.id + ')">Deactivate</button>'
                                         }
-                                    </div>
-                                  </div>
+                                    </td>
+                                </tr>
                             \`;
                         });
-                        html += ' </div>';
+                        html += '</table>';
                         document.getElementById('users').innerHTML = html;
                     }
                 }
@@ -1091,6 +1559,7 @@ router.get("/api/admin/payments", checkAdminAuth, async (req, res) => {
         
         if (error) throw error;
         
+        // Get user names
         const { data: users } = await supabase.from('jambuser').select('email, userName');
         const userMap = {};
         users?.forEach(u => { userMap[u.email] = u.userName; });
@@ -1128,16 +1597,9 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
                     if (data.success && data.payments) {
                         let html = ' 60% <th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th>  </tr';
                         data.payments.forEach(p => {
-                            html += \` 72%
-                                     <td>\${p.userName || p.email} </div>
-                                     <td>₦\${p.amount} </div>
-                                     <td>\${p.payment_method} </div>
-                                     <td>\${p.status} </div>
-                                     <td>\${new Date(p.created_at).toLocaleDateString()} </div>
-                                    </div>
-                            \`;
+                            html += \`<tr><td>\${p.userName || p.email}</td><td>₦\${p.amount}</td><td>\${p.payment_method}</td><td>\${p.status}</td><td>\${new Date(p.created_at).toLocaleDateString()}</td></tr>\`;
                         });
-                        html += ' </div>';
+                        html += '</table>';
                         document.getElementById('payments').innerHTML = html;
                     }
                 }
@@ -1166,6 +1628,7 @@ router.post("/send", async (req, res) => {
     const activationCode = generateActivationCode();
     
     try {
+        // Check if user has made payment
         const { data: payments, error: paymentError } = await supabase
             .from('user_payments')
             .select('*')
@@ -1177,6 +1640,7 @@ router.post("/send", async (req, res) => {
             return res.status(400).json({ success: false, message: "User has not made payment" });
         }
         
+        // Check if user exists
         const { data: users, error: userError } = await supabase
             .from('jambuser')
             .select('*')
@@ -1188,6 +1652,7 @@ router.post("/send", async (req, res) => {
             return res.status(400).json({ success: false, message: "User not found" });
         }
         
+        // Update activation code
         const { error: updateError } = await supabase
             .from('jambuser')
             .update({ activationCode: activationCode })
@@ -1195,6 +1660,7 @@ router.post("/send", async (req, res) => {
         
         if (updateError) throw updateError;
         
+        // Send email
         const emailContent = `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <div style="background: linear-gradient(135deg, #1a237e 0%, #311b92 100%); padding: 30px; text-align: center;">
