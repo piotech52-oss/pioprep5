@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { Pool } = require('pg');
+const { createClient } = require('@supabase/supabase-js');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -12,53 +12,51 @@ require('dotenv').config();
 const sgMail = require('@sendgrid/mail');
 sgMail.setApiKey('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');
 
-// ========== SUPABASE POSTGRESQL CONNECTION ==========
-// Using the same connection method as your server.js
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://postgres.vbpehelxdstkasscjiov:6AEm4AvvZPgEkpSx@aws-1-eu-west-1.pooler.supabase.com:6543/postgres',
-    ssl: {
-        rejectUnauthorized: false,
-        sslmode: 'require'
-    },
-    max: 10,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
-});
+// ========== SUPABASE CLIENT SETUP (SAME AS INDEX.JS) ==========
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Global connection status
+let supabase = null;
 let dbConnected = false;
 let connectionChecked = false;
 
-// Test database connection
-async function testDatabaseConnection() {
+console.log('🔧 Admin Environment Check:');
+console.log(`   SUPABASE_URL: ${supabaseUrl ? supabaseUrl : 'NOT SET'}`);
+console.log(`   SUPABASE_KEY: ${supabaseKey ? 'SET (length: ' + supabaseKey.length + ')' : 'NOT SET'}`);
+
+if (supabaseUrl && supabaseKey) {
     try {
-        const client = await pool.connect();
-        console.log('✅ Admin DB connected to Supabase PostgreSQL!');
-        dbConnected = true;
+        supabase = createClient(supabaseUrl, supabaseKey);
+        console.log('✅ Admin Supabase client initialized');
+        
+        // Test connection immediately
+        (async () => {
+            try {
+                const { data, error } = await supabase.from('admin_users').select('*').limit(1);
+                if (!error) {
+                    dbConnected = true;
+                    connectionChecked = true;
+                    console.log('✅ Admin: Connected to Supabase');
+                    console.log(`   Admin users found: ${data ? data.length : 0}`);
+                    await createAdminTable();
+                } else {
+                    console.log('⚠️ Admin: Table check failed -', error.message);
+                    connectionChecked = true;
+                    await createAdminTable();
+                }
+            } catch (err) {
+                console.log('⚠️ Admin: Connection failed -', err.message);
+                connectionChecked = true;
+            }
+        })();
+    } catch (error) {
+        console.log('⚠️ Admin Supabase client error:', error.message);
         connectionChecked = true;
-        client.release();
-        
-        // Test a simple query
-        await client.query('SELECT 1');
-        console.log('✅ Admin database queries working');
-        
-        // Create tables if they don't exist
-        await createAdminTable();
-        
-        return true;
-    } catch (err) {
-        console.error('❌ Error connecting admin to Supabase PostgreSQL:', err.message);
-        dbConnected = false;
-        connectionChecked = true;
-        return false;
     }
+} else {
+    console.log('⚠️ Admin: Supabase credentials not available');
+    connectionChecked = true;
 }
-
-// Test connection immediately
-testDatabaseConnection();
-
-// Retry connection every 30 seconds
-setInterval(testDatabaseConnection, 30000);
 
 // Middleware to check database status
 router.use((req, res, next) => {
@@ -70,65 +68,95 @@ router.use((req, res, next) => {
 // ========== ADMIN TABLES SETUP ==========
 
 async function createAdminTable() {
-    if (!dbConnected) return;
-    
-    const createTableSQL = `
-        CREATE TABLE IF NOT EXISTS admin_users (
-            id SERIAL PRIMARY KEY,
-            username VARCHAR(50) NOT NULL UNIQUE,
-            password VARCHAR(255) NOT NULL,
-            security_code VARCHAR(10) NOT NULL,
-            full_name VARCHAR(100) NOT NULL,
-            email VARCHAR(100) NOT NULL UNIQUE,
-            role VARCHAR(20) DEFAULT 'admin',
-            is_active BOOLEAN DEFAULT TRUE,
-            login_attempts INTEGER DEFAULT 0,
-            account_locked_until TIMESTAMP,
-            last_login TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    `;
+    if (!supabase) return;
     
     try {
-        await pool.query(createTableSQL);
-        console.log('✅ Admin table checked/created');
+        // Check if admin_users table exists
+        const { error: checkError } = await supabase
+            .from('admin_users')
+            .select('id')
+            .limit(1);
+        
+        if (checkError && checkError.code === '42P01') {
+            console.log('📝 Creating admin_users table...');
+            
+            const createTableSQL = `
+                CREATE TABLE IF NOT EXISTS admin_users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(50) NOT NULL UNIQUE,
+                    password VARCHAR(255) NOT NULL,
+                    security_code VARCHAR(10) NOT NULL,
+                    full_name VARCHAR(100) NOT NULL,
+                    email VARCHAR(100) NOT NULL UNIQUE,
+                    role VARCHAR(20) DEFAULT 'admin',
+                    is_active BOOLEAN DEFAULT TRUE,
+                    login_attempts INTEGER DEFAULT 0,
+                    account_locked_until TIMESTAMP,
+                    last_login TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            `;
+            
+            const { error: createError } = await supabase.rpc('exec_sql', { sql: createTableSQL });
+            
+            if (createError) {
+                console.log('⚠️ Could not create table via RPC, will continue with existing data');
+            } else {
+                console.log('✅ Admin table created');
+            }
+        }
+        
         await createDefaultAdmin();
     } catch (err) {
-        console.error('❌ Error creating admin table:', err);
+        console.error('❌ Error in createAdminTable:', err);
     }
 }
 
 async function createPaymentNotificationsTable() {
-    if (!dbConnected) return;
-    
-    const createTableSQL = `
-        CREATE TABLE IF NOT EXISTS payment_notifications (
-            id SERIAL PRIMARY KEY,
-            payment_id VARCHAR(100) NOT NULL,
-            user_email VARCHAR(100) NOT NULL,
-            amount DECIMAL(10,2) NOT NULL,
-            currency VARCHAR(10) NOT NULL,
-            payment_method VARCHAR(50) NOT NULL,
-            status VARCHAR(50) NOT NULL,
-            note TEXT,
-            is_read SMALLINT DEFAULT 0,
-            admin_notified SMALLINT DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    `;
+    if (!supabase) return;
     
     try {
-        await pool.query(createTableSQL);
-        console.log('✅ Payment notifications table checked/created');
+        const { error: checkError } = await supabase
+            .from('payment_notifications')
+            .select('id')
+            .limit(1);
+        
+        if (checkError && checkError.code === '42P01') {
+            console.log('📝 Creating payment_notifications table...');
+            
+            const createTableSQL = `
+                CREATE TABLE IF NOT EXISTS payment_notifications (
+                    id SERIAL PRIMARY KEY,
+                    payment_id VARCHAR(100) NOT NULL,
+                    user_email VARCHAR(100) NOT NULL,
+                    amount DECIMAL(10,2) NOT NULL,
+                    currency VARCHAR(10) NOT NULL,
+                    payment_method VARCHAR(50) NOT NULL,
+                    status VARCHAR(50) NOT NULL,
+                    note TEXT,
+                    is_read SMALLINT DEFAULT 0,
+                    admin_notified SMALLINT DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            `;
+            
+            const { error: createError } = await supabase.rpc('exec_sql', { sql: createTableSQL });
+            
+            if (createError) {
+                console.log('⚠️ Could not create payment_notifications table');
+            } else {
+                console.log('✅ Payment notifications table created');
+            }
+        }
     } catch (err) {
         console.error('❌ Error creating payment notifications table:', err);
     }
 }
 
 async function createDefaultAdmin() {
-    if (!dbConnected) return;
+    if (!supabase) return;
     
     try {
         const adminUsername = 'piotech52@gmail.com';
@@ -137,36 +165,39 @@ async function createDefaultAdmin() {
         const adminSecurityCode = 'piotech52@gmail.com';
         const adminFullName = 'Pio Tech Administrator';
         
-        const checkQuery = "SELECT id FROM admin_users WHERE username = $1 OR email = $2";
-        const result = await pool.query(checkQuery, [adminUsername, adminEmail]);
+        const { data: existingAdmin, error: checkError } = await supabase
+            .from('admin_users')
+            .select('id')
+            .or(`username.eq.${adminUsername},email.eq.${adminEmail}`)
+            .maybeSingle();
         
-        if (result.rows.length === 0) {
+        if (!existingAdmin) {
             const saltRounds = 10;
             const hashedPassword = await bcrypt.hash(adminPassword, saltRounds);
             
-            const insertQuery = `
-                INSERT INTO admin_users 
-                (username, email, password, security_code, full_name, role, is_active) 
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-            `;
+            const { error: insertError } = await supabase
+                .from('admin_users')
+                .insert([{
+                    username: adminUsername,
+                    email: adminEmail,
+                    password: hashedPassword,
+                    security_code: adminSecurityCode,
+                    full_name: adminFullName,
+                    role: 'super_admin',
+                    is_active: true
+                }]);
             
-            await pool.query(insertQuery, [
-                adminUsername,
-                adminEmail,
-                hashedPassword,
-                adminSecurityCode,
-                adminFullName,
-                'super_admin',
-                true
-            ]);
-            
-            console.log('✅ Default admin user created successfully');
-            console.log('📋 Admin Credentials:');
-            console.log('   Username/Email:', adminUsername);
-            console.log('   Password:', adminPassword);
-            console.log('   Security Code:', adminSecurityCode);
-            
-            await createPaymentNotificationsTable();
+            if (insertError) {
+                console.log('⚠️ Error creating admin:', insertError.message);
+            } else {
+                console.log('✅ Default admin user created successfully');
+                console.log('📋 Admin Credentials:');
+                console.log('   Username/Email:', adminUsername);
+                console.log('   Password:', adminPassword);
+                console.log('   Security Code:', adminSecurityCode);
+                
+                await createPaymentNotificationsTable();
+            }
         } else {
             console.log('✅ Default admin user already exists');
             await createPaymentNotificationsTable();
@@ -269,7 +300,7 @@ async function sendPaymentEmailNotification(paymentData) {
 
 // ========== ADMIN LOGIN ROUTES ==========
 
-// Admin login page
+// Admin login page - FIXED with better password handling
 router.get("/admin/login", (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -277,27 +308,106 @@ router.get("/admin/login", (req, res) => {
         <head>
             <title>Admin Login</title>
             <style>
-                body { font-family: Arial; padding: 50px; text-align: center; 
+                body { 
+                    font-family: Arial; 
+                    padding: 50px; 
+                    text-align: center; 
                     background: linear-gradient(135deg, #1a237e 0%, #311b92 100%);
-                    height: 100vh; display: flex; justify-content: center; align-items: center; margin: 0; }
-                .login-box { background: white; padding: 40px; border-radius: 10px; 
-                    box-shadow: 0 15px 35px rgba(0,0,0,0.3); width: 100%; max-width: 450px; }
-                h1 { color: #1a237e; margin-bottom: 30px; }
-                input { width: 100%; padding: 12px; margin: 10px 0; border: 2px solid #ddd; 
-                    border-radius: 5px; font-size: 16px; box-sizing: border-box; }
-                button { width: 100%; padding: 12px; background: #1a237e; color: white; 
-                    border: none; border-radius: 5px; font-size: 16px; cursor: pointer; margin-top: 20px; }
-                button:hover { background: #311b92; }
-                .back { display: inline-block; margin-top: 20px; color: #1a237e; text-decoration: none; }
-                .credentials { margin-top: 20px; padding: 15px; background: #f8f9fa; 
-                    border-radius: 5px; font-size: 14px; text-align: left; }
-                .credentials code { background: #e9ecef; padding: 2px 6px; border-radius: 3px; word-break: break-all; }
-                .message { margin-top: 15px; padding: 10px; border-radius: 5px; }
-                .message.error { background: #f8d7da; color: #721c24; }
-                .message.success { background: #d4edda; color: #155724; }
-                .status { margin-top: 10px; padding: 8px; border-radius: 5px; font-size: 12px; }
-                .status.connected { background: #d4edda; color: #155724; }
-                .status.disconnected { background: #f8d7da; color: #721c24; }
+                    height: 100vh; 
+                    display: flex; 
+                    justify-content: center; 
+                    align-items: center; 
+                    margin: 0;
+                }
+                .login-box { 
+                    background: white; 
+                    padding: 40px; 
+                    border-radius: 10px; 
+                    box-shadow: 0 15px 35px rgba(0,0,0,0.3); 
+                    width: 100%; 
+                    max-width: 500px;
+                }
+                h1 { 
+                    color: #1a237e; 
+                    margin-bottom: 30px;
+                }
+                input { 
+                    width: 100%; 
+                    padding: 12px; 
+                    margin: 10px 0; 
+                    border: 2px solid #ddd; 
+                    border-radius: 5px; 
+                    font-size: 16px;
+                    box-sizing: border-box;
+                }
+                input:focus {
+                    outline: none;
+                    border-color: #1a237e;
+                }
+                button { 
+                    width: 100%; 
+                    padding: 12px; 
+                    background: #1a237e; 
+                    color: white; 
+                    border: none; 
+                    border-radius: 5px; 
+                    font-size: 16px; 
+                    cursor: pointer; 
+                    margin-top: 20px;
+                }
+                button:hover { 
+                    background: #311b92;
+                }
+                .back { 
+                    display: inline-block; 
+                    margin-top: 20px; 
+                    color: #1a237e; 
+                    text-decoration: none;
+                }
+                .credentials { 
+                    margin-top: 20px; 
+                    padding: 15px; 
+                    background: #f8f9fa; 
+                    border-radius: 5px; 
+                    font-size: 14px; 
+                    text-align: left;
+                }
+                .credentials code {
+                    background: #e9ecef;
+                    padding: 2px 6px;
+                    border-radius: 3px;
+                    word-break: break-all;
+                    font-size: 13px;
+                }
+                .message {
+                    margin-top: 15px;
+                    padding: 10px;
+                    border-radius: 5px;
+                }
+                .message.error {
+                    background: #f8d7da;
+                    color: #721c24;
+                    border: 1px solid #f5c6cb;
+                }
+                .message.success {
+                    background: #d4edda;
+                    color: #155724;
+                    border: 1px solid #c3e6cb;
+                }
+                .status {
+                    margin-top: 10px;
+                    padding: 8px;
+                    border-radius: 5px;
+                    font-size: 12px;
+                }
+                .status.connected {
+                    background: #d4edda;
+                    color: #155724;
+                }
+                .status.disconnected {
+                    background: #f8d7da;
+                    color: #721c24;
+                }
                 .debug-info {
                     margin-top: 10px;
                     font-size: 12px;
@@ -321,7 +431,7 @@ router.get("/admin/login", (req, res) => {
                 <div id="dbStatus" class="status">Checking database connection...</div>
                 <form id="loginForm" onsubmit="return false;">
                     <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required value="piotech52@gmail.com">
-                    <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
+                    <input type="password" id="password" placeholder="Password" autocomplete="current-password" required style="font-family: monospace;">
                     <div class="password-hint">
                         <strong>Full password:</strong> piotech@52gmail.com (21 characters)
                         <br>
@@ -339,8 +449,7 @@ router.get("/admin/login", (req, res) => {
                 </div>
                 <div class="debug-info">
                     <strong>Debug:</strong> <span id="passwordLength">0</span> characters typed<br>
-                    <a href="/api/admin/check-admin" target="_blank" style="color: #1a237e;">🔍 Check Admin Password</a><br>
-                    <a href="/api/admin/fix-password" target="_blank" style="color: #1a237e;">🔧 Fix Admin Password</a>
+                    <a href="/api/admin/check-admin" target="_blank" style="color: #1a237e;">🔍 Check Admin Password in Database</a>
                 </div>
                 <a href="/" class="back">← Back to Home</a>
             </div>
@@ -400,6 +509,7 @@ router.get("/admin/login", (req, res) => {
                     console.log('Login attempt:', { 
                         username, 
                         passwordLength: password.length, 
+                        passwordValue: password,
                         securityCode 
                     });
                     
@@ -459,14 +569,15 @@ router.get("/admin/login", (req, res) => {
     `);
 });
 
-// Admin login API
+// Admin login API - USING SUPABASE CLIENT
 router.post("/api/auth/login", async (req, res) => {
     const { username, password, security_code } = req.body;
     
     console.log('🔐 Admin login attempt:', username);
     console.log('   Password length:', password ? password.length : 0);
+    console.log('   Password value:', password); // Be careful with this in production
 
-    if (!dbConnected) {
+    if (!supabase || !dbConnected) {
         console.log('❌ Database not connected');
         return res.status(503).json({
             success: false,
@@ -482,10 +593,21 @@ router.post("/api/auth/login", async (req, res) => {
     }
 
     try {
-        const query = "SELECT * FROM admin_users WHERE (username = $1 OR email = $1) AND is_active = TRUE";
-        const result = await pool.query(query, [username]);
+        const { data: admins, error } = await supabase
+            .from('admin_users')
+            .select('*')
+            .or(`username.eq.${username},email.eq.${username}`)
+            .eq('is_active', true);
 
-        if (result.rows.length === 0) {
+        if (error) {
+            console.error('Database error:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Database error: ' + error.message
+            });
+        }
+
+        if (!admins || admins.length === 0) {
             console.log('   Admin user not found');
             return res.status(401).json({
                 success: false,
@@ -493,15 +615,9 @@ router.post("/api/auth/login", async (req, res) => {
             });
         }
 
-        const admin = result.rows[0];
+        const admin = admins[0];
         console.log('   Found admin:', admin.email);
-        
-        if (admin.role === 'user') {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied'
-            });
-        }
+        console.log('   Stored password hash length:', admin.password.length);
         
         if (admin.security_code !== security_code) {
             console.log('   Security code mismatch');
@@ -511,6 +627,7 @@ router.post("/api/auth/login", async (req, res) => {
             });
         }
 
+        // ========== BCrypt COMPARISON - SAME AS YOUR POSTGRESQL VERSION ==========
         const isPasswordValid = await bcrypt.compare(password, admin.password);
         console.log('   Password valid:', isPasswordValid);
         
@@ -570,32 +687,39 @@ router.post("/api/auth/logout", (req, res) => {
 // ========== DEBUG ROUTES ==========
 router.get("/api/admin/debug-db", async (req, res) => {
     res.json({
+        supabaseAvailable: !!supabase,
         dbConnected: dbConnected,
         connectionChecked: connectionChecked,
-        databaseUrl: process.env.DATABASE_URL ? 'Set' : 'Not set',
         supabaseUrl: process.env.SUPABASE_URL ? 'Set' : 'Not set',
+        supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'Set' : 'Not set',
         timestamp: new Date().toISOString()
     });
 });
 
 // DEBUG ROUTE TO CHECK ADMIN PASSWORD
 router.get("/api/admin/check-admin", async (req, res) => {
-    if (!dbConnected) {
+    if (!supabase || !dbConnected) {
         return res.json({ success: false, message: 'Database not connected' });
     }
     
     try {
-        const query = "SELECT id, username, email, role, is_active, password FROM admin_users WHERE email = $1";
-        const result = await pool.query(query, ['piotech52@gmail.com']);
+        const { data: admins, error } = await supabase
+            .from('admin_users')
+            .select('id, username, email, role, is_active, password')
+            .eq('email', 'piotech52@gmail.com');
         
-        if (result.rows.length === 0) {
+        if (error) {
+            return res.json({ success: false, error: error.message });
+        }
+        
+        if (!admins || admins.length === 0) {
             return res.json({ success: false, message: 'Admin user not found' });
         }
         
-        const admin = result.rows[0];
+        const admin = admins[0];
         
-        // Test password verification
         const testPassword = 'piotech@52gmail.com';
+        // ========== BCrypt COMPARISON - SAME AS YOUR POSTGRESQL VERSION ==========
         const isValid = await bcrypt.compare(testPassword, admin.password);
         
         res.json({
@@ -611,7 +735,8 @@ router.get("/api/admin/check-admin", async (req, res) => {
                 testPassword: testPassword,
                 isValid: isValid
             },
-            message: isValid ? '✅ Password is correct!' : '❌ Password hash does not match!'
+            message: isValid ? '✅ Password is correct!' : '❌ Password hash does not match!',
+            tip: isValid ? 'Your password is correct. Make sure you are typing the full password: piotech@52gmail.com' : 'The stored password hash does not match. You may need to reset the admin password.'
         });
     } catch (err) {
         console.error('Debug error:', err);
@@ -621,7 +746,7 @@ router.get("/api/admin/check-admin", async (req, res) => {
 
 // ========== FIX ADMIN PASSWORD ROUTE ==========
 router.get("/api/admin/fix-password", async (req, res) => {
-    if (!dbConnected) {
+    if (!supabase || !dbConnected) {
         return res.json({ success: false, message: 'Database not connected' });
     }
     
@@ -629,28 +754,33 @@ router.get("/api/admin/fix-password", async (req, res) => {
         const adminEmail = 'piotech52@gmail.com';
         const correctPassword = 'piotech@52gmail.com';
         
-        // Hash the password
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(correctPassword, saltRounds);
         
-        console.log('🔑 New password hash:', hashedPassword);
+        const { error: updateError } = await supabase
+            .from('admin_users')
+            .update({ password: hashedPassword })
+            .eq('email', adminEmail);
         
-        // Update the password
-        const updateQuery = "UPDATE admin_users SET password = $1 WHERE email = $2";
-        await pool.query(updateQuery, [hashedPassword, adminEmail]);
+        if (updateError) {
+            return res.json({ success: false, error: updateError.message });
+        }
         
-        // Verify it worked
-        const verifyQuery = "SELECT password FROM admin_users WHERE email = $1";
-        const result = await pool.query(verifyQuery, [adminEmail]);
-        const isValid = await bcrypt.compare(correctPassword, result.rows[0].password);
+        const { data: admins } = await supabase
+            .from('admin_users')
+            .select('password')
+            .eq('email', adminEmail)
+            .single();
+        
+        // ========== BCrypt COMPARISON - SAME AS YOUR POSTGRESQL VERSION ==========
+        const isValid = await bcrypt.compare(correctPassword, admins.password);
         
         res.json({
             success: true,
-            message: 'Admin password has been reset',
-            newPassword: correctPassword,
-            newHash: hashedPassword,
-            verificationResult: isValid ? '✅ Password verified! You can now login.' : '❌ Verification failed!',
-            note: 'Use password: piotech@52gmail.com (21 characters)'
+            message: 'Admin password reset',
+            passwordSet: correctPassword,
+            verificationResult: isValid ? '✅ Password verified!' : '❌ Verification failed!',
+            newHashLength: admins.password.length
         });
     } catch (err) {
         console.error('Fix password error:', err);
@@ -658,25 +788,40 @@ router.get("/api/admin/fix-password", async (req, res) => {
     }
 });
 
-// ========== STATISTICS API ==========
+// ========== STATISTICS API - USING SUPABASE ==========
 router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) {
+    if (!supabase || !dbConnected) {
         return res.status(503).json({ success: false, message: 'Database unavailable' });
     }
     
     try {
-        const totalUsers = await pool.query("SELECT COUNT(*) as count FROM jambuser");
-        const totalPayments = await pool.query("SELECT COUNT(*) as count FROM user_payments");
-        const totalRevenue = await pool.query("SELECT COALESCE(SUM(amount), 0) as total FROM user_payments WHERE status = 'completed'");
-        const unreadNotifications = await pool.query("SELECT COUNT(*) as count FROM payment_notifications WHERE is_read = 0");
+        const { count: totalUsers } = await supabase
+            .from('jambuser')
+            .select('*', { count: 'exact', head: true });
+        
+        const { count: totalPayments } = await supabase
+            .from('user_payments')
+            .select('*', { count: 'exact', head: true });
+        
+        const { data: revenueData } = await supabase
+            .from('user_payments')
+            .select('amount')
+            .eq('status', 'completed');
+        
+        const totalRevenue = revenueData?.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0) || 0;
+        
+        const { count: unreadNotifications } = await supabase
+            .from('payment_notifications')
+            .select('*', { count: 'exact', head: true })
+            .eq('is_read', 0);
         
         res.json({
             success: true,
             statistics: {
-                totalUsers: { count: parseInt(totalUsers.rows[0]?.count) || 0 },
-                totalPayments: { count: parseInt(totalPayments.rows[0]?.count) || 0 },
-                totalRevenue: { total: parseFloat(totalRevenue.rows[0]?.total) || 0 },
-                unreadNotifications: { count: parseInt(unreadNotifications.rows[0]?.count) || 0 }
+                totalUsers: { count: totalUsers || 0 },
+                totalPayments: { count: totalPayments || 0 },
+                totalRevenue: { total: totalRevenue },
+                unreadNotifications: { count: unreadNotifications || 0 }
             }
         });
     } catch (error) {
@@ -793,47 +938,31 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
     `);
 });
 
-// ========== USER MANAGEMENT ==========
+// ========== USER MANAGEMENT - USING SUPABASE ==========
 router.get("/api/admin/users", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) {
+    if (!supabase || !dbConnected) {
         return res.status(503).json({ success: false, message: 'Database unavailable' });
     }
     
     try {
-        const usersQuery = `
-            SELECT 
-                id, 
-                "userName", 
-                email, 
-                role, 
-                is_activated, 
-                "activationCode", 
-                created_at,
-                updated_at 
-            FROM jambuser 
-            ORDER BY created_at DESC
-        `;
-        const usersResult = await pool.query(usersQuery);
-        const users = usersResult.rows;
+        const { data: users, error } = await supabase
+            .from('jambuser')
+            .select('id, userName, email, role, is_activated, activationCode, created_at')
+            .order('created_at', { ascending: false });
         
-        const statsQueries = {
-            totalUsers: "SELECT COUNT(*) as count FROM jambuser",
-            activeUsers: "SELECT COUNT(*) as count FROM jambuser WHERE is_activated = '1'",
-            students: "SELECT COUNT(*) as count FROM jambuser WHERE role = 'student'",
-            paidUsers: "SELECT COUNT(DISTINCT email) as count FROM user_payments WHERE status = 'completed'"
+        if (error) throw error;
+        
+        const { count: totalUsers } = await supabase.from('jambuser').select('*', { count: 'exact', head: true });
+        const { count: activeUsers } = await supabase.from('jambuser').select('*', { count: 'exact', head: true }).eq('is_activated', '1');
+        const { count: students } = await supabase.from('jambuser').select('*', { count: 'exact', head: true }).eq('role', 'student');
+        const { count: paidUsers } = await supabase.from('user_payments').select('*', { count: 'exact', head: true }).eq('status', 'completed');
+        
+        const stats = {
+            totalUsers: totalUsers || 0,
+            activeUsers: activeUsers || 0,
+            students: students || 0,
+            paidUsers: paidUsers || 0
         };
-        
-        const stats = {};
-        
-        for (const [key, query] of Object.entries(statsQueries)) {
-            try {
-                const result = await pool.query(query);
-                stats[key] = parseInt(result.rows[0]?.count) || 0;
-            } catch (err) {
-                console.error(`Error fetching ${key}:`, err);
-                stats[key] = 0;
-            }
-        }
         
         res.json({ success: true, users: users, stats: stats });
     } catch (err) {
@@ -884,10 +1013,10 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
                                             '<button class="btn btn-deactivate" onclick="deactivateUser(' + user.id + ')">Deactivate</button>'
                                         }
                                     </div>
-                                  </tr
+                                  </div>
                             \`;
                         });
-                        html += '}</div>';
+                        html += ' </div>';
                         document.getElementById('users').innerHTML = html;
                     }
                 }
@@ -922,9 +1051,14 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
 });
 
 router.post("/api/admin/users/:id/activate", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) return res.status(503).json({ success: false });
+    if (!supabase || !dbConnected) return res.status(503).json({ success: false });
     try {
-        await pool.query(`UPDATE jambuser SET is_activated = '1' WHERE id = $1`, [req.params.id]);
+        const { error } = await supabase
+            .from('jambuser')
+            .update({ is_activated: '1' })
+            .eq('id', req.params.id);
+        
+        if (error) throw error;
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ success: false });
@@ -932,26 +1066,41 @@ router.post("/api/admin/users/:id/activate", checkAdminAuth, async (req, res) =>
 });
 
 router.post("/api/admin/users/:id/deactivate", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) return res.status(503).json({ success: false });
+    if (!supabase || !dbConnected) return res.status(503).json({ success: false });
     try {
-        await pool.query(`UPDATE jambuser SET is_activated = '0' WHERE id = $1`, [req.params.id]);
+        const { error } = await supabase
+            .from('jambuser')
+            .update({ is_activated: '0' })
+            .eq('id', req.params.id);
+        
+        if (error) throw error;
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ success: false });
     }
 });
 
-// ========== PAYMENT MANAGEMENT ==========
+// ========== PAYMENT MANAGEMENT - USING SUPABASE ==========
 router.get("/api/admin/payments", checkAdminAuth, async (req, res) => {
-    if (!dbConnected) return res.status(503).json({ success: false });
+    if (!supabase || !dbConnected) return res.status(503).json({ success: false });
     try {
-        const result = await pool.query(`
-            SELECT up.*, ju."userName" 
-            FROM user_payments up 
-            LEFT JOIN jambuser ju ON up.email = ju.email 
-            ORDER BY up.created_at DESC
-        `);
-        res.json({ success: true, payments: result.rows });
+        const { data: payments, error } = await supabase
+            .from('user_payments')
+            .select('*')
+            .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        const { data: users } = await supabase.from('jambuser').select('email, userName');
+        const userMap = {};
+        users?.forEach(u => { userMap[u.email] = u.userName; });
+        
+        const paymentsWithNames = payments.map(p => ({
+            ...p,
+            userName: userMap[p.email] || null
+        }));
+        
+        res.json({ success: true, payments: paymentsWithNames });
     } catch (err) {
         res.status(500).json({ success: false });
     }
@@ -979,9 +1128,16 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
                     if (data.success && data.payments) {
                         let html = ' 60% <th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th>  </tr';
                         data.payments.forEach(p => {
-                            html += \`<tr><td>\${p.userName || p.email}</td><td>₦\${p.amount}</td><td>\${p.payment_method}</td><td>\${p.status}</td><td>\${new Date(p.created_at).toLocaleDateString()}</td></tr>\`;
+                            html += \` 72%
+                                     <td>\${p.userName || p.email} </div>
+                                     <td>₦\${p.amount} </div>
+                                     <td>\${p.payment_method} </div>
+                                     <td>\${p.status} </div>
+                                     <td>\${new Date(p.created_at).toLocaleDateString()} </div>
+                                    </div>
+                            \`;
                         });
-                        html += '</table>';
+                        html += ' </div>';
                         document.getElementById('payments').innerHTML = html;
                     }
                 }
@@ -992,13 +1148,13 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
     `);
 });
 
-// ========== ACTIVATION CODE ROUTE ==========
+// ========== ACTIVATION CODE ROUTE - USING SUPABASE ==========
 router.post("/send", async (req, res) => {
     if (!req.session || !req.session.adminLoggedIn) {
         return res.status(401).json({ success: false, message: "Unauthorized" });
     }
     
-    if (!dbConnected) {
+    if (!supabase || !dbConnected) {
         return res.status(503).json({ success: false, message: 'Database unavailable' });
     }
     
@@ -1010,17 +1166,34 @@ router.post("/send", async (req, res) => {
     const activationCode = generateActivationCode();
     
     try {
-        const paymentResult = await pool.query("SELECT * FROM user_payments WHERE email = $1", [email]);
-        if (paymentResult.rows.length === 0) {
+        const { data: payments, error: paymentError } = await supabase
+            .from('user_payments')
+            .select('*')
+            .eq('email', email);
+        
+        if (paymentError) throw paymentError;
+        
+        if (!payments || payments.length === 0) {
             return res.status(400).json({ success: false, message: "User has not made payment" });
         }
         
-        const userResult = await pool.query("SELECT * FROM jambuser WHERE email = $1", [email]);
-        if (userResult.rows.length === 0) {
+        const { data: users, error: userError } = await supabase
+            .from('jambuser')
+            .select('*')
+            .eq('email', email);
+        
+        if (userError) throw userError;
+        
+        if (!users || users.length === 0) {
             return res.status(400).json({ success: false, message: "User not found" });
         }
         
-        await pool.query('UPDATE jambuser SET "activationCode" = $1 WHERE email = $2', [activationCode, email]);
+        const { error: updateError } = await supabase
+            .from('jambuser')
+            .update({ activationCode: activationCode })
+            .eq('email', email);
+        
+        if (updateError) throw updateError;
         
         const emailContent = `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -1071,8 +1244,7 @@ router.get("/admin/questions", checkAdminAuth, (req, res) => {
 });
 
 router.get("/api/admin/check-access", (req, res) => {
-    const isAdmin = req.session && req.session.adminLoggedIn;
-    res.json({ success: true, isAdmin: isAdmin });
+    res.json({ success: true, isAdmin: req.session?.adminLoggedIn || false });
 });
 
 module.exports = router;
