@@ -1,17 +1,4 @@
-// ===============================
-// 404 HANDLER - Skip admin routes
-// ===============================
-app.use((req, res) => {
-    // Don't intercept admin routes - let them be handled by the admin router
-    if (req.path.startsWith('/admin')) {
-        return res.status(404).send('Admin route not found - check admin router');
-    }
-    if (req.path.startsWith('/api')) {
-        res.status(404).json({ success: false, message: 'API route not found' });
-    } else {
-        res.status(404).send('Not found');
-    }
-});const express = require('express');
+const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
