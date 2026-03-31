@@ -208,14 +208,12 @@ async function createDefaultAdmin() {
 // ========== MIDDLEWARE ==========
 
 const checkAdminAuth = (req, res, next) => {
-    console.log('🔐 Auth Check - Session:', {
-        exists: !!req.session,
+    console.log('🔐 Auth Check:', {
         adminLoggedIn: req.session?.adminLoggedIn,
         adminUsername: req.session?.adminUsername
     });
     
     if (!req.session || !req.session.adminLoggedIn) {
-        console.log('⚠️ Not authenticated, redirecting to login');
         return res.redirect('/admin/login');
     }
     next();
@@ -302,6 +300,11 @@ async function sendPaymentEmailNotification(paymentData) {
 }
 
 // ========== ADMIN LOGIN ROUTES ==========
+
+// Test route to verify admin router is working
+router.get("/admin/test", (req, res) => {
+    res.send("Admin router is working!");
+});
 
 // Admin login page
 router.get("/admin/login", (req, res) => {
@@ -410,9 +413,9 @@ router.get("/admin/login", (req, res) => {
                 <h1>🔐 Admin Login</h1>
                 <div id="dbStatus" class="status">Checking database connection...</div>
                 <form id="loginForm">
-                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required>
+                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required value="piotech52@gmail.com">
                     <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
-                    <input type="text" id="securityCode" placeholder="Security Code" required>
+                    <input type="text" id="securityCode" placeholder="Security Code" required value="piotech52@gmail.com">
                     <button type="submit">Login</button>
                 </form>
                 <div id="message"></div>
@@ -897,26 +900,26 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
                     const response = await fetch('/api/admin/users');
                     const data = await response.json();
                     if (data.success) {
-                        let html = ' 60% <th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th> </tr>';
+                        let html = ' 60% <th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th>  </tr';
                         data.users.forEach(user => {
                             const isActive = user.is_activated === '1';
                             html += \`
                                  water
-                                    <td>\${user.userName || 'N/A'}</td>
-                                    <td>\${user.email}</td>
-                                    <td class="status-\${isActive ? 'active' : 'inactive'}">\${isActive ? 'Active' : 'Inactive'}</td>
-                                    <td>\${user.activationCode || 'No code'}</td>
+                                    <td>\${user.userName || 'N/A'} </td
+                                    <td>\${user.email} </td
+                                    <td class="status-\${isActive ? 'active' : 'inactive'}">\${isActive ? 'Active' : 'Inactive'} </td
+                                    <td>\${user.activationCode || 'No code'} </td
                                     <td>
                                         <button class="btn btn-code" onclick="sendCode('\${user.email}')">Send Code</button>
                                         \${!isActive ? 
                                             '<button class="btn btn-activate" onclick="activateUser(' + user.id + ')">Activate</button>' : 
                                             '<button class="btn btn-deactivate" onclick="deactivateUser(' + user.id + ')">Deactivate</button>'
                                         }
-                                    </td>
-                                 </tr
+                                     </td
+                                   </tr
                             \`;
                         });
-                        html += '</table>';
+                        html += ' </table';
                         document.getElementById('users').innerHTML = html;
                     }
                 }
@@ -1026,6 +1029,9 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
                 table { width: 100%; background: white; border-collapse: collapse; margin-top: 20px; }
                 th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
                 th { background: #1a237e; color: white; }
+                .status-completed { color: green; font-weight: bold; }
+                .status-pending { color: orange; font-weight: bold; }
+                .status-failed { color: red; font-weight: bold; }
             </style>
         </head>
         <body>
@@ -1047,7 +1053,7 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
                     if (data.success && data.payments) {
                         let html = ' 60% <th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th>  </tr';
                         data.payments.forEach(p => {
-                            html += \`  <td>\${p.userName || p.email}</td>  <td>₦\${p.amount}</td>  <td>\${p.payment_method}</td>  <td>\${p.status}</td>  <td>\${new Date(p.created_at).toLocaleDateString()}</td>  </tr\`;
+                            html += \`  </td<td>\${p.userName || p.email}  </td<td>₦\${p.amount}  </td<td>\${p.payment_method}  </td<td class="status-\${p.status}">\${p.status}  </td<td>\${new Date(p.created_at).toLocaleDateString()}  </td</tr\`;
                         });
                         html += ' </table';
                         document.getElementById('payments').innerHTML = html;
