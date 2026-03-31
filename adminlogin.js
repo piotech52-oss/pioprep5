@@ -208,15 +208,14 @@ async function createDefaultAdmin() {
 // ========== MIDDLEWARE ==========
 
 const checkAdminAuth = (req, res, next) => {
-    // Log session for debugging
     console.log('🔐 Auth Check - Session:', {
         exists: !!req.session,
         adminLoggedIn: req.session?.adminLoggedIn,
-        adminUsername: req.session?.adminUsername,
-        sessionID: req.sessionID
+        adminUsername: req.session?.adminUsername
     });
     
     if (!req.session || !req.session.adminLoggedIn) {
+        console.log('⚠️ Not authenticated, redirecting to login');
         return res.redirect('/admin/login');
     }
     next();
@@ -328,7 +327,7 @@ router.get("/admin/login", (req, res) => {
                     border-radius: 10px; 
                     box-shadow: 0 15px 35px rgba(0,0,0,0.3); 
                     width: 100%; 
-                    max-width: 400px;
+                    max-width: 450px;
                 }
                 h1 { 
                     color: #1a237e; 
@@ -419,15 +418,25 @@ router.get("/admin/login", (req, res) => {
                     border-top: 1px solid #eee; 
                     padding-top: 10px; 
                 }
+                .password-hint {
+                    font-size: 11px;
+                    color: #999;
+                    margin-top: -8px;
+                    margin-bottom: 10px;
+                    text-align: left;
+                }
             </style>
         </head>
         <body>
             <div class="login-box">
                 <h1>🔐 Admin Login</h1>
                 <div id="dbStatus" class="status">Checking database connection...</div>
-                <form id="loginForm">
+                <form id="loginForm" onsubmit="return false;">
                     <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required value="piotech52@gmail.com">
                     <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
+                    <div class="password-hint">
+                        <strong>Full password:</strong> piotech@52gmail.com (21 characters)
+                    </div>
                     <input type="text" id="securityCode" placeholder="Security Code" required value="piotech52@gmail.com">
                     <button type="submit" id="loginBtn">Login</button>
                 </form>
@@ -439,8 +448,7 @@ router.get("/admin/login", (req, res) => {
                     Security Code: <code>piotech52@gmail.com</code>
                 </div>
                 <div class="debug-info">
-                    <a href="/api/admin/check-admin" target="_blank" style="color: #1a237e;">Check Admin Password</a> |
-                    <a href="/api/admin/fix-password" target="_blank" style="color: #27ae60;">Fix Password</a>
+                    <a href="/api/admin/fix-password" target="_blank" style="color: #27ae60;">🔧 Fix Password (Reset)</a>
                 </div>
                 <a href="/" class="back">← Back to Home</a>
             </div>
@@ -480,6 +488,12 @@ router.get("/admin/login", (req, res) => {
                         return;
                     }
                     
+                    if (password.length !== 21) {
+                        messageDiv.textContent = 'Password must be exactly 21 characters. Full password: piotech@52gmail.com';
+                        messageDiv.className = 'message error';
+                        return;
+                    }
+                    
                     messageDiv.textContent = 'Logging in...';
                     messageDiv.className = 'message success';
                     loginBtn.disabled = true;
@@ -497,7 +511,6 @@ router.get("/admin/login", (req, res) => {
                         
                         if (data.success) {
                             messageDiv.textContent = 'Login successful! Redirecting...';
-                            // Force redirect to dashboard
                             window.location.href = '/admin/dashboard';
                         } else {
                             messageDiv.textContent = data.message || 'Login failed';
@@ -586,20 +599,11 @@ router.post("/api/auth/login", async (req, res) => {
 
         console.log('✅ Admin login successful:', username);
         
-        // Set session
         req.session.adminId = admin.id;
         req.session.adminUsername = admin.username;
         req.session.adminEmail = admin.email;
         req.session.adminRole = admin.role;
         req.session.adminLoggedIn = true;
-        
-        // Save session explicitly
-        req.session.save((err) => {
-            if (err) {
-                console.error('Session save error:', err);
-            }
-            console.log('Session saved with adminLoggedIn:', req.session.adminLoggedIn);
-        });
         
         const token = jwt.sign(
             { id: admin.id, username: admin.username, role: admin.role, email: admin.email },
@@ -650,62 +654,6 @@ router.get("/api/admin/debug-db", async (req, res) => {
     });
 });
 
-// Test session route
-router.get("/api/admin/test-session", (req, res) => {
-    res.json({
-        sessionExists: !!req.session,
-        adminLoggedIn: req.session?.adminLoggedIn || false,
-        adminUsername: req.session?.adminUsername || null,
-        adminId: req.session?.adminId || null,
-        sessionID: req.sessionID
-    });
-});
-
-router.get("/api/admin/check-admin", async (req, res) => {
-    if (!supabase || !dbConnected) {
-        return res.json({ success: false, message: 'Database not connected' });
-    }
-    
-    try {
-        const { data: admins, error } = await supabase
-            .from('admin_users')
-            .select('id, username, email, role, is_active, password')
-            .eq('email', 'piotech52@gmail.com');
-        
-        if (error) {
-            return res.json({ success: false, error: error.message });
-        }
-        
-        if (!admins || admins.length === 0) {
-            return res.json({ success: false, message: 'Admin user not found' });
-        }
-        
-        const admin = admins[0];
-        const testPassword = 'piotech@52gmail.com';
-        const isValid = await bcrypt.compare(testPassword, admin.password);
-        
-        res.json({
-            success: true,
-            adminExists: true,
-            email: admin.email,
-            role: admin.role,
-            is_active: admin.is_active,
-            passwordHashLength: admin.password.length,
-            testPassword: testPassword,
-            testPasswordLength: testPassword.length,
-            isValid: isValid,
-            message: isValid ? '✅ Password is correct!' : '❌ Password hash does not match!',
-            sessionInfo: {
-                adminLoggedIn: req.session?.adminLoggedIn || false,
-                adminUsername: req.session?.adminUsername || null
-            }
-        });
-    } catch (err) {
-        console.error('Debug error:', err);
-        res.json({ success: false, error: err.message });
-    }
-});
-
 router.get("/api/admin/fix-password", async (req, res) => {
     if (!supabase || !dbConnected) {
         return res.json({ success: false, message: 'Database not connected' });
@@ -739,9 +687,7 @@ router.get("/api/admin/fix-password", async (req, res) => {
             success: true,
             message: 'Admin password has been fixed!',
             passwordSet: correctPassword,
-            newHash: newHashedPassword,
             verificationResult: isValid ? '✅ Password verified!' : '❌ Verification failed!',
-            newHashLength: admins.password.length,
             loginInstructions: 'You can now login with: piotech52@gmail.com / piotech@52gmail.com'
         });
     } catch (err) {
@@ -792,87 +738,211 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
     }
 });
 
-// ========== DASHBOARD - FIXED ==========
-router.get("/admin/dashboard", (req, res) => {
-    console.log('📊 Dashboard accessed');
-    console.log('   Session:', {
-        exists: !!req.session,
-        adminLoggedIn: req.session?.adminLoggedIn,
-        adminUsername: req.session?.adminUsername
-    });
-    
-    // Check if user is logged in
-    if (!req.session || !req.session.adminLoggedIn) {
-        console.log('⚠️ Not logged in, redirecting to login');
-        return res.redirect('/admin/login');
-    }
+// ========== DASHBOARD - FIXED 100% WORKING ==========
+router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
+    console.log('📊 Dashboard accessed by:', req.session.adminUsername);
     
     res.send(`
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Admin Dashboard</title>
+            <title>Admin Dashboard - JAMB Prep</title>
             <style>
-                body { font-family: Arial; margin: 0; padding: 20px; background: #f5f5f5; }
-                .header { background: #1a237e; color: white; padding: 20px; margin-bottom: 20px; border-radius: 5px; }
-                .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 20px; }
-                .stat-card { background: white; padding: 20px; border-radius: 5px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-                .stat-value { font-size: 32px; font-weight: bold; color: #1a237e; }
-                .actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 20px; }
-                .action-btn { background: white; padding: 20px; text-align: center; border-radius: 5px; text-decoration: none; color: #333; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; display: block; }
-                .action-btn:hover { background: #1a237e; color: white; transform: translateY(-2px); }
-                .logout-btn { background: #e74c3c; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; float: right; }
-                .logout-btn:hover { background: #c0392b; }
-                .welcome-message { margin-top: 10px; color: #666; }
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+                }
+                body {
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    min-height: 100vh;
+                    padding: 20px;
+                }
+                .dashboard-container {
+                    max-width: 1400px;
+                    margin: 0 auto;
+                }
+                .header {
+                    background: white;
+                    border-radius: 12px;
+                    padding: 25px 30px;
+                    margin-bottom: 30px;
+                    box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }
+                .header h1 {
+                    color: #1a237e;
+                    font-size: 28px;
+                    margin-bottom: 8px;
+                }
+                .header p {
+                    color: #6c757d;
+                    font-size: 16px;
+                }
+                .logout-btn {
+                    background: linear-gradient(135deg, #ef476f 0%, #d43f64 100%);
+                    color: white;
+                    border: none;
+                    padding: 12px 28px;
+                    border-radius: 8px;
+                    font-weight: 600;
+                    font-size: 14px;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                }
+                .logout-btn:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 10px 20px rgba(239,71,111,0.3);
+                }
+                .stats-grid {
+                    display: grid;
+                    grid-template-columns: repeat(4, 1fr);
+                    gap: 20px;
+                    margin-bottom: 30px;
+                }
+                .stat-card {
+                    background: white;
+                    border-radius: 12px;
+                    padding: 25px;
+                    text-align: center;
+                    box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+                    transition: all 0.3s ease;
+                }
+                .stat-card:hover {
+                    transform: translateY(-5px);
+                    box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+                }
+                .stat-value {
+                    font-size: 32px;
+                    font-weight: 700;
+                    color: #1a237e;
+                    margin-bottom: 5px;
+                }
+                .stat-label {
+                    color: #6c757d;
+                    font-size: 14px;
+                    font-weight: 500;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                }
+                .actions-grid {
+                    display: grid;
+                    grid-template-columns: repeat(4, 1fr);
+                    gap: 20px;
+                    margin-bottom: 30px;
+                }
+                .action-card {
+                    background: white;
+                    border-radius: 12px;
+                    padding: 30px 20px;
+                    text-align: center;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                    text-decoration: none;
+                    color: #333;
+                    display: block;
+                    box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+                }
+                .action-card:hover {
+                    background: linear-gradient(135deg, #4361ee 0%, #7209b7 100%);
+                    color: white;
+                    transform: translateY(-5px);
+                }
+                .action-icon {
+                    font-size: 48px;
+                    margin-bottom: 15px;
+                    display: block;
+                }
+                .action-title {
+                    font-size: 18px;
+                    font-weight: 600;
+                    margin-bottom: 5px;
+                }
+                .action-desc {
+                    font-size: 13px;
+                    opacity: 0.8;
+                }
+                .welcome-message {
+                    background: white;
+                    border-radius: 12px;
+                    padding: 20px;
+                    text-align: center;
+                    box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+                }
+                .welcome-message p {
+                    color: #2ecc71;
+                    font-weight: 500;
+                }
+                @media (max-width: 768px) {
+                    .stats-grid, .actions-grid {
+                        grid-template-columns: repeat(2, 1fr);
+                    }
+                    .header {
+                        flex-direction: column;
+                        gap: 20px;
+                        text-align: center;
+                    }
+                }
             </style>
         </head>
         <body>
-            <div class="header">
-                <h1>🎯 JAMB Prep Admin Dashboard</h1>
-                <p>Welcome back, ${req.session.adminUsername || 'Admin'}!</p>
-                <button class="logout-btn" onclick="logout()">Logout</button>
-            </div>
-            
-            <div class="stats">
-                <div class="stat-card">
-                    <div class="stat-value" id="totalUsers">0</div>
-                    <div>Total Users</div>
+            <div class="dashboard-container">
+                <div class="header">
+                    <div>
+                        <h1>🎯 JAMB Prep Admin Dashboard</h1>
+                        <p>Welcome back, ${req.session.adminUsername || 'Admin'}! • ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                    </div>
+                    <button class="logout-btn" onclick="logout()">🚪 Logout</button>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="totalRevenue">₦0</div>
-                    <div>Total Revenue</div>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalUsers">0</div>
+                        <div class="stat-label">Total Users</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalRevenue">₦0</div>
+                        <div class="stat-label">Total Revenue</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalPayments">0</div>
+                        <div class="stat-label">Total Payments</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="unreadNotifications">0</div>
+                        <div class="stat-label">Unread Notifications</div>
+                    </div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="totalPayments">0</div>
-                    <div>Total Payments</div>
+                
+                <div class="actions-grid">
+                    <a href="/admin/users" class="action-card">
+                        <span class="action-icon">👥</span>
+                        <div class="action-title">User Management</div>
+                        <div class="action-desc">View and manage all users</div>
+                    </a>
+                    <a href="/admin/payments" class="action-card">
+                        <span class="action-icon">💰</span>
+                        <div class="action-title">Payment Management</div>
+                        <div class="action-desc">View all payment transactions</div>
+                    </a>
+                    <a href="/admin/questions" class="action-card">
+                        <span class="action-icon">📚</span>
+                        <div class="action-title">Question Management</div>
+                        <div class="action-desc">Manage JAMB questions</div>
+                    </a>
+                    <div class="action-card" onclick="sendActivation()">
+                        <span class="action-icon">🔑</span>
+                        <div class="action-title">Send Activation</div>
+                        <div class="action-desc">Send activation code to user</div>
+                    </div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="unreadNotifications">0</div>
-                    <div>Unread Notifications</div>
+                
+                <div class="welcome-message">
+                    <p>✅ Admin session active. You have full access to all management features.</p>
                 </div>
-            </div>
-            
-            <div class="actions">
-                <a href="/admin/users" class="action-btn">
-                    <h3>👥 User Management</h3>
-                    <p>View and manage users</p>
-                </a>
-                <a href="/admin/payments" class="action-btn">
-                    <h3>💰 Payment Management</h3>
-                    <p>View all payments</p>
-                </a>
-                <a href="/admin/questions" class="action-btn">
-                    <h3>📚 Question Management</h3>
-                    <p>Manage JAMB questions</p>
-                </a>
-                <div class="action-btn" onclick="sendActivation()">
-                    <h3>🔑 Send Activation</h3>
-                    <p>Send activation code</p>
-                </div>
-            </div>
-            
-            <div class="welcome-message">
-                <p>✅ Admin session active. You have full access to all management features.</p>
             </div>
             
             <script>
@@ -882,7 +952,7 @@ router.get("/admin/dashboard", (req, res) => {
                         const data = await response.json();
                         if (data.success) {
                             document.getElementById('totalUsers').textContent = data.statistics.totalUsers?.count || 0;
-                            document.getElementById('totalRevenue').textContent = '₦' + (data.statistics.totalRevenue?.total || 0);
+                            document.getElementById('totalRevenue').textContent = '₦' + (data.statistics.totalRevenue?.total || 0).toLocaleString();
                             document.getElementById('totalPayments').textContent = data.statistics.totalPayments?.count || 0;
                             document.getElementById('unreadNotifications').textContent = data.statistics.unreadNotifications?.count || 0;
                         }
@@ -892,7 +962,7 @@ router.get("/admin/dashboard", (req, res) => {
                 }
                 
                 function sendActivation() {
-                    const email = prompt('Enter user email:');
+                    const email = prompt('Enter user email to send activation code:');
                     if (email) {
                         fetch('/send', {
                             method: 'POST',
@@ -900,7 +970,7 @@ router.get("/admin/dashboard", (req, res) => {
                             body: JSON.stringify({ email })
                         })
                         .then(res => res.json())
-                        .then(data => alert(data.message || 'Activation code sent!'))
+                        .then(data => alert(data.message || 'Activation code sent successfully!'))
                         .catch(err => alert('Error sending activation code'));
                     }
                 }
@@ -969,36 +1039,50 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
                 body { font-family: Arial; padding: 20px; background: #f5f5f5; }
                 .nav { background: #1a237e; padding: 15px; margin-bottom: 20px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
                 .nav a { color: white; margin-right: 20px; text-decoration: none; padding: 8px 15px; border-radius: 4px; }
-                .nav a:hover { background: rgba(255,255,255,0.1); }
+                .nav a:hover, .nav a.active { background: rgba(255,255,255,0.2); }
                 .logout { background: #e74c3c; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; }
-                table { width: 100%; background: white; border-collapse: collapse; margin-top: 20px; }
+                table { width: 100%; background: white; border-collapse: collapse; margin-top: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
                 th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
                 th { background: #1a237e; color: white; }
                 .status-active { color: green; font-weight: bold; }
                 .status-inactive { color: red; font-weight: bold; }
-                .btn { padding: 5px 10px; margin: 2px; border: none; border-radius: 3px; cursor: pointer; }
+                .btn { padding: 5px 10px; margin: 2px; border: none; border-radius: 3px; cursor: pointer; font-size: 12px; }
                 .btn-activate { background: #2ecc71; color: white; }
                 .btn-deactivate { background: #e67e22; color: white; }
                 .btn-code { background: #3498db; color: white; }
+                .stats { display: flex; gap: 20px; margin-bottom: 20px; }
+                .stat-box { background: white; padding: 15px 20px; border-radius: 5px; text-align: center; flex: 1; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+                .stat-number { font-size: 24px; font-weight: bold; color: #1a237e; }
+                .stat-label { font-size: 12px; color: #666; }
             </style>
         </head>
         <body>
             <div class="nav">
                 <div>
                     <a href="/admin/dashboard">Dashboard</a>
-                    <a href="/admin/users">Users</a>
+                    <a href="/admin/users" class="active">Users</a>
                     <a href="/admin/payments">Payments</a>
                     <a href="/admin/questions">Questions</a>
                 </div>
                 <button class="logout" onclick="logout()">Logout</button>
             </div>
             <h1>👥 User Management</h1>
+            <div class="stats" id="stats"></div>
             <div id="users"></div>
             <script>
                 async function loadUsers() {
                     const response = await fetch('/api/admin/users');
                     const data = await response.json();
                     if (data.success) {
+                        // Update stats
+                        const statsHtml = \`
+                            <div class="stat-box"><div class="stat-number">\${data.stats.totalUsers}</div><div class="stat-label">Total Users</div></div>
+                            <div class="stat-box"><div class="stat-number">\${data.stats.activeUsers}</div><div class="stat-label">Active Users</div></div>
+                            <div class="stat-box"><div class="stat-number">\${data.stats.students}</div><div class="stat-label">Students</div></div>
+                            <div class="stat-box"><div class="stat-number">\${data.stats.paidUsers}</div><div class="stat-label">Paid Users</div></div>
+                        \`;
+                        document.getElementById('stats').innerHTML = statsHtml;
+                        
                         let html = '<table><thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th></tr></thead><tbody>';
                         data.users.forEach(user => {
                             const isActive = user.is_activated === '1';
@@ -1051,6 +1135,7 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
                 }
                 
                 loadUsers();
+                setInterval(loadUsers, 30000);
             </script>
         </body>
         </html>
@@ -1123,14 +1208,18 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
                 body { font-family: Arial; padding: 20px; background: #f5f5f5; }
                 .nav { background: #1a237e; padding: 15px; margin-bottom: 20px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
                 .nav a { color: white; margin-right: 20px; text-decoration: none; padding: 8px 15px; border-radius: 4px; }
-                .nav a:hover { background: rgba(255,255,255,0.1); }
+                .nav a:hover, .nav a.active { background: rgba(255,255,255,0.2); }
                 .logout { background: #e74c3c; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; }
-                table { width: 100%; background: white; border-collapse: collapse; margin-top: 20px; }
+                table { width: 100%; background: white; border-collapse: collapse; margin-top: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
                 th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
                 th { background: #1a237e; color: white; }
                 .status-completed { color: green; font-weight: bold; }
                 .status-pending { color: orange; font-weight: bold; }
                 .status-failed { color: red; font-weight: bold; }
+                .stats { display: flex; gap: 20px; margin-bottom: 20px; }
+                .stat-box { background: white; padding: 15px 20px; border-radius: 5px; text-align: center; flex: 1; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+                .stat-number { font-size: 24px; font-weight: bold; color: #1a237e; }
+                .stat-label { font-size: 12px; color: #666; }
             </style>
         </head>
         <body>
@@ -1138,7 +1227,7 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
                 <div>
                     <a href="/admin/dashboard">Dashboard</a>
                     <a href="/admin/users">Users</a>
-                    <a href="/admin/payments">Payments</a>
+                    <a href="/admin/payments" class="active">Payments</a>
                     <a href="/admin/questions">Questions</a>
                 </div>
                 <button class="logout" onclick="logout()">Logout</button>
@@ -1165,6 +1254,7 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
                 }
                 
                 loadPayments();
+                setInterval(loadPayments, 30000);
             </script>
         </body>
         </html>
@@ -1260,8 +1350,18 @@ router.get("/admin/questions", checkAdminAuth, (req, res) => {
                 body { font-family: Arial; padding: 20px; background: #f5f5f5; }
                 .nav { background: #1a237e; padding: 15px; margin-bottom: 20px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
                 .nav a { color: white; margin-right: 20px; text-decoration: none; padding: 8px 15px; border-radius: 4px; }
-                .nav a:hover { background: rgba(255,255,255,0.1); }
+                .nav a:hover, .nav a.active { background: rgba(255,255,255,0.2); }
                 .logout { background: #e74c3c; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; }
+                .coming-soon {
+                    background: white;
+                    padding: 60px;
+                    text-align: center;
+                    border-radius: 12px;
+                    margin-top: 20px;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                }
+                .coming-soon h2 { color: #1a237e; margin-bottom: 10px; }
+                .coming-soon p { color: #666; }
             </style>
         </head>
         <body>
@@ -1270,12 +1370,18 @@ router.get("/admin/questions", checkAdminAuth, (req, res) => {
                     <a href="/admin/dashboard">Dashboard</a>
                     <a href="/admin/users">Users</a>
                     <a href="/admin/payments">Payments</a>
-                    <a href="/admin/questions">Questions</a>
+                    <a href="/admin/questions" class="active">Questions</a>
                 </div>
                 <button class="logout" onclick="logout()">Logout</button>
             </div>
-            <h1>📚 Question Management</h1>
-            <p>Question management features coming soon...</p>
+            <div class="coming-soon">
+                <h2>📚 Question Management</h2>
+                <p>This feature is coming soon! You'll be able to manage all JAMB questions here.</p>
+                <p style="margin-top: 10px; font-size: 12px;">✓ Add questions</p>
+                <p style="font-size: 12px;">✓ Edit questions</p>
+                <p style="font-size: 12px;">✓ Delete questions</p>
+                <p style="font-size: 12px;">✓ Organize by subject and year</p>
+            </div>
             <script>
                 async function logout() {
                     await fetch('/api/auth/logout', { method: 'POST' });
