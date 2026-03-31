@@ -12,7 +12,7 @@ require('dotenv').config();
 const sgMail = require('@sendgrid/mail');
 sgMail.setApiKey('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');
 
-// ========== SUPABASE CLIENT SETUP ==========
+// ========== SUPABASE CLIENT SETUP (SAME AS INDEX.JS) ==========
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -29,6 +29,7 @@ if (supabaseUrl && supabaseKey) {
         supabase = createClient(supabaseUrl, supabaseKey);
         console.log('✅ Admin Supabase client initialized');
         
+        // Test connection immediately
         (async () => {
             try {
                 const { data, error } = await supabase.from('admin_users').select('*').limit(1);
@@ -57,6 +58,7 @@ if (supabaseUrl && supabaseKey) {
     connectionChecked = true;
 }
 
+// Middleware to check database status
 router.use((req, res, next) => {
     req.dbConnected = dbConnected;
     req.connectionChecked = connectionChecked;
@@ -69,6 +71,7 @@ async function createAdminTable() {
     if (!supabase) return;
     
     try {
+        // Check if admin_users table exists
         const { error: checkError } = await supabase
             .from('admin_users')
             .select('id')
@@ -77,6 +80,7 @@ async function createAdminTable() {
         if (checkError && checkError.code === '42P01') {
             console.log('📝 Creating admin_users table...');
             
+            // Create table using raw SQL via Supabase RPC (if available)
             const createTableSQL = `
                 CREATE TABLE IF NOT EXISTS admin_users (
                     id SERIAL PRIMARY KEY,
@@ -95,6 +99,7 @@ async function createAdminTable() {
                 )
             `;
             
+            // Try to execute SQL (this may require pg_execute function)
             const { error: createError } = await supabase.rpc('exec_sql', { sql: createTableSQL });
             
             if (createError) {
@@ -162,6 +167,7 @@ async function createDefaultAdmin() {
         const adminSecurityCode = 'piotech52@gmail.com';
         const adminFullName = 'Pio Tech Administrator';
         
+        // Check if admin exists
         const { data: existingAdmin, error: checkError } = await supabase
             .from('admin_users')
             .select('id')
@@ -208,19 +214,13 @@ async function createDefaultAdmin() {
 // ========== MIDDLEWARE ==========
 
 const checkAdminAuth = (req, res, next) => {
-    console.log('🔐 Auth Check - Session:', {
-        exists: !!req.session,
-        adminLoggedIn: req.session?.adminLoggedIn,
-        adminUsername: req.session?.adminUsername
-    });
-    
     if (!req.session || !req.session.adminLoggedIn) {
-        console.log('⚠️ Not authenticated, redirecting to login');
         return res.redirect('/admin/login');
     }
     next();
 };
 
+// Configure multer for question images
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const uploadDir = 'question-images/';
@@ -303,6 +303,7 @@ async function sendPaymentEmailNotification(paymentData) {
 
 // ========== ADMIN LOGIN ROUTES ==========
 
+// Admin login page
 router.get("/admin/login", (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -310,145 +311,34 @@ router.get("/admin/login", (req, res) => {
         <head>
             <title>Admin Login</title>
             <style>
-                body { 
-                    font-family: Arial; 
-                    padding: 50px; 
-                    text-align: center; 
+                body { font-family: Arial; padding: 50px; text-align: center; 
                     background: linear-gradient(135deg, #1a237e 0%, #311b92 100%);
-                    height: 100vh; 
-                    display: flex; 
-                    justify-content: center; 
-                    align-items: center; 
-                    margin: 0;
-                }
-                .login-box { 
-                    background: white; 
-                    padding: 40px; 
-                    border-radius: 10px; 
-                    box-shadow: 0 15px 35px rgba(0,0,0,0.3); 
-                    width: 100%; 
-                    max-width: 550px;
-                }
-                h1 { 
-                    color: #1a237e; 
-                    margin-bottom: 30px;
-                }
-                input { 
-                    width: 100%; 
-                    padding: 12px; 
-                    margin: 10px 0; 
-                    border: 2px solid #ddd; 
-                    border-radius: 5px; 
-                    font-size: 16px;
-                    box-sizing: border-box;
-                }
-                input:focus {
-                    outline: none;
-                    border-color: #1a237e;
-                }
-                button { 
-                    width: 100%; 
-                    padding: 12px; 
-                    background: #1a237e; 
-                    color: white; 
-                    border: none; 
-                    border-radius: 5px; 
-                    font-size: 16px; 
-                    cursor: pointer; 
-                    margin-top: 20px;
-                }
-                button:hover { 
-                    background: #311b92;
-                }
-                button:disabled {
-                    opacity: 0.6;
-                    cursor: not-allowed;
-                }
-                .back { 
-                    display: inline-block; 
-                    margin-top: 20px; 
-                    color: #1a237e; 
-                    text-decoration: none;
-                }
-                .credentials { 
-                    margin-top: 20px; 
-                    padding: 15px; 
-                    background: #f8f9fa; 
-                    border-radius: 5px; 
-                    font-size: 14px; 
-                    text-align: left;
-                }
-                .credentials code {
-                    background: #e9ecef;
-                    padding: 2px 6px;
-                    border-radius: 3px;
-                    word-break: break-all;
-                }
-                .message { 
-                    margin-top: 15px; 
-                    padding: 10px; 
-                    border-radius: 5px; 
-                }
-                .message.error { 
-                    background: #f8d7da; 
-                    color: #721c24; 
-                }
-                .message.success { 
-                    background: #d4edda; 
-                    color: #155724; 
-                }
-                .status { 
-                    margin-top: 10px; 
-                    padding: 8px; 
-                    border-radius: 5px; 
-                    font-size: 12px; 
-                }
-                .status.connected { 
-                    background: #d4edda; 
-                    color: #155724; 
-                }
-                .status.disconnected { 
-                    background: #f8d7da; 
-                    color: #721c24; 
-                }
-                .debug-info { 
-                    margin-top: 10px; 
-                    font-size: 12px; 
-                    color: #666; 
-                    text-align: left; 
-                    border-top: 1px solid #eee; 
-                    padding-top: 10px; 
-                }
-                .password-hint {
-                    font-size: 12px;
-                    color: #1a237e;
-                    margin-top: -5px;
-                    margin-bottom: 10px;
-                    text-align: left;
-                    font-weight: bold;
-                }
-                .password-counter {
+                    height: 100vh; display: flex; justify-content: center; align-items: center; margin: 0; }
+                .login-box { background: white; padding: 40px; border-radius: 10px; 
+                    box-shadow: 0 15px 35px rgba(0,0,0,0.3); width: 100%; max-width: 400px; }
+                h1 { color: #1a237e; margin-bottom: 30px; }
+                input { width: 100%; padding: 12px; margin: 10px 0; border: 2px solid #ddd; 
+                    border-radius: 5px; font-size: 16px; box-sizing: border-box; }
+                button { width: 100%; padding: 12px; background: #1a237e; color: white; 
+                    border: none; border-radius: 5px; font-size: 16px; cursor: pointer; margin-top: 20px; }
+                button:hover { background: #311b92; }
+                .back { display: inline-block; margin-top: 20px; color: #1a237e; text-decoration: none; }
+                .credentials { margin-top: 20px; padding: 15px; background: #f8f9fa; 
+                    border-radius: 5px; font-size: 14px; text-align: left; }
+                .credentials code { background: #e9ecef; padding: 2px 6px; border-radius: 3px; }
+                .message { margin-top: 15px; padding: 10px; border-radius: 5px; }
+                .message.error { background: #f8d7da; color: #721c24; }
+                .message.success { background: #d4edda; color: #155724; }
+                .status { margin-top: 10px; padding: 8px; border-radius: 5px; font-size: 12px; }
+                .status.connected { background: #d4edda; color: #155724; }
+                .status.disconnected { background: #f8d7da; color: #721c24; }
+                .debug-info {
+                    margin-top: 10px;
                     font-size: 12px;
                     color: #666;
-                    margin-top: 5px;
-                    text-align: right;
-                }
-                .password-counter span {
-                    font-weight: bold;
-                }
-                .full-password-box {
-                    background: #f0f0f0;
-                    padding: 10px;
-                    border-radius: 5px;
-                    font-family: monospace;
-                    font-size: 14px;
-                    margin: 10px 0;
-                    text-align: center;
-                    word-break: break-all;
-                    border-left: 4px solid #1a237e;
-                }
-                .full-password-box strong {
-                    color: #1a237e;
+                    text-align: left;
+                    border-top: 1px solid #eee;
+                    padding-top: 10px;
                 }
             </style>
         </head>
@@ -456,79 +346,26 @@ router.get("/admin/login", (req, res) => {
             <div class="login-box">
                 <h1>🔐 Admin Login</h1>
                 <div id="dbStatus" class="status">Checking database connection...</div>
-                
-                <div class="full-password-box">
-                    <strong>📋 Copy this password exactly:</strong><br>
-                    <code style="font-size: 18px; font-weight: bold;">piotech@52gmail.com</code>
-                    <div style="font-size: 11px; margin-top: 5px;">(21 characters - includes @ and .com)</div>
-                </div>
-                
-                <form id="loginForm" onsubmit="return false;">
-                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required value="piotech52@gmail.com">
-                    <input type="password" id="password" placeholder="Password" autocomplete="current-password" required style="font-size: 16px;">
-                    <div class="password-counter">
-                        📝 Characters typed: <span id="passwordCount">0</span> / 21
-                    </div>
-                    <div class="password-hint" id="passwordHint" style="color: red; display: none;">
-                        ⚠️ Password must be exactly 21 characters!
-                    </div>
-                    <input type="text" id="securityCode" placeholder="Security Code" required value="piotech52@gmail.com">
-                    <button type="submit" id="loginBtn">Login</button>
+                <form id="loginForm">
+                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required>
+                    <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
+                    <input type="text" id="securityCode" placeholder="Security Code" required>
+                    <button type="submit">Login</button>
                 </form>
                 <div id="message"></div>
                 <div class="credentials">
                     <strong>Default Admin Credentials:</strong><br>
                     Username/Email: <code>piotech52@gmail.com</code><br>
-                    Password: <code>piotech@52gmail.com</code> (21 characters)<br>
+                    Password: <code>piotech@52gmail.com</code><br>
                     Security Code: <code>piotech52@gmail.com</code>
                 </div>
                 <div class="debug-info">
-                    <a href="/api/admin/fix-password" target="_blank" style="color: #27ae60;">🔧 Fix Password (Reset)</a>
+                    <a href="/api/admin/check-admin" target="_blank" style="color: #1a237e;">Check Admin Password</a><br>
+                    <a href="/api/admin/fix-password" target="_blank" style="color: #1a237e;">Fix Admin Password</a>
                 </div>
                 <a href="/" class="back">← Back to Home</a>
             </div>
             <script>
-                const passwordInput = document.getElementById('password');
-                const passwordCount = document.getElementById('passwordCount');
-                const passwordHint = document.getElementById('passwordHint');
-                const loginBtn = document.getElementById('loginBtn');
-                const messageDiv = document.getElementById('message');
-                
-                // Remove any maxlength limitation
-                passwordInput.removeAttribute('maxlength');
-                passwordInput.setAttribute('maxlength', '100');
-                
-                // Count characters as user types
-                passwordInput.addEventListener('input', function() {
-                    const len = this.value.length;
-                    passwordCount.textContent = len;
-                    
-                    if (len === 21) {
-                        passwordHint.style.display = 'none';
-                        passwordCount.style.color = 'green';
-                        passwordCount.style.fontWeight = 'bold';
-                    } else {
-                        passwordHint.style.display = 'block';
-                        passwordCount.style.color = 'red';
-                        passwordCount.style.fontWeight = 'normal';
-                    }
-                });
-                
-                // Also check on paste
-                passwordInput.addEventListener('paste', function(e) {
-                    setTimeout(() => {
-                        const len = this.value.length;
-                        passwordCount.textContent = len;
-                        if (len === 21) {
-                            passwordHint.style.display = 'none';
-                            passwordCount.style.color = 'green';
-                        } else {
-                            passwordHint.style.display = 'block';
-                            passwordCount.style.color = 'red';
-                        }
-                    }, 10);
-                });
-                
                 async function checkDBStatus() {
                     try {
                         const response = await fetch('/api/admin/debug-db');
@@ -555,13 +392,7 @@ router.get("/admin/login", (req, res) => {
                     const username = document.getElementById('username').value.trim();
                     const password = document.getElementById('password').value;
                     const securityCode = document.getElementById('securityCode').value.trim();
-                    
-                    console.log('Login attempt:', { 
-                        username, 
-                        passwordLength: password.length, 
-                        passwordValue: password,
-                        securityCode 
-                    });
+                    const messageDiv = document.getElementById('message');
                     
                     if (!username || !password || !securityCode) {
                         messageDiv.textContent = 'All fields are required';
@@ -569,48 +400,31 @@ router.get("/admin/login", (req, res) => {
                         return;
                     }
                     
-                    if (password.length !== 21) {
-                        messageDiv.textContent = '❌ Password must be exactly 21 characters. You typed ' + password.length + ' characters.\n\nFull password: piotech@52gmail.com';
-                        messageDiv.className = 'message error';
-                        return;
-                    }
-                    
                     messageDiv.textContent = 'Logging in...';
                     messageDiv.className = 'message success';
-                    loginBtn.disabled = true;
-                    loginBtn.textContent = 'Logging in...';
                     
                     try {
                         const response = await fetch('/api/auth/login', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ 
-                                username: username, 
-                                password: password, 
-                                security_code: securityCode 
-                            })
+                            body: JSON.stringify({ username, password, security_code: securityCode })
                         });
                         
                         const data = await response.json();
-                        console.log('Login response:', data);
                         
                         if (data.success) {
-                            messageDiv.textContent = '✅ Login successful! Redirecting...';
+                            messageDiv.textContent = 'Login successful! Redirecting...';
                             setTimeout(() => {
                                 window.location.href = '/admin/dashboard';
-                            }, 500);
+                            }, 1000);
                         } else {
-                            messageDiv.textContent = '❌ ' + (data.message || 'Login failed');
+                            messageDiv.textContent = data.message || 'Login failed';
                             messageDiv.className = 'message error';
-                            loginBtn.disabled = false;
-                            loginBtn.textContent = 'Login';
                         }
                     } catch (error) {
-                        messageDiv.textContent = '❌ Connection error. Please try again.';
+                        messageDiv.textContent = 'Connection error. Please try again.';
                         messageDiv.className = 'message error';
                         console.error('Login error:', error);
-                        loginBtn.disabled = false;
-                        loginBtn.textContent = 'Login';
                     }
                 });
             </script>
@@ -619,12 +433,12 @@ router.get("/admin/login", (req, res) => {
     `);
 });
 
+// Admin login API - USING SUPABASE CLIENT
 router.post("/api/auth/login", async (req, res) => {
     const { username, password, security_code } = req.body;
     
     console.log('🔐 Admin login attempt:', username);
     console.log('   Password length:', password ? password.length : 0);
-    console.log('   Password value:', password);
 
     if (!supabase || !dbConnected) {
         console.log('❌ Database not connected');
@@ -642,6 +456,7 @@ router.post("/api/auth/login", async (req, res) => {
     }
 
     try {
+        // Query admin user using Supabase
         const { data: admins, error } = await supabase
             .from('admin_users')
             .select('*')
@@ -721,6 +536,7 @@ router.post("/api/auth/login", async (req, res) => {
     }
 });
 
+// Admin logout
 router.post("/api/auth/logout", (req, res) => {
     req.session.destroy((err) => {
         if (err) {
@@ -742,6 +558,55 @@ router.get("/api/admin/debug-db", async (req, res) => {
     });
 });
 
+// DEBUG ROUTE TO CHECK ADMIN PASSWORD
+router.get("/api/admin/check-admin", async (req, res) => {
+    if (!supabase || !dbConnected) {
+        return res.json({ success: false, message: 'Database not connected' });
+    }
+    
+    try {
+        const { data: admins, error } = await supabase
+            .from('admin_users')
+            .select('id, username, email, role, is_active, password')
+            .eq('email', 'piotech52@gmail.com');
+        
+        if (error) {
+            return res.json({ success: false, error: error.message });
+        }
+        
+        if (!admins || admins.length === 0) {
+            return res.json({ success: false, message: 'Admin user not found' });
+        }
+        
+        const admin = admins[0];
+        
+        // Test password verification
+        const testPassword = 'piotech@52gmail.com';
+        const isValid = await bcrypt.compare(testPassword, admin.password);
+        
+        res.json({
+            success: true,
+            adminExists: true,
+            email: admin.email,
+            role: admin.role,
+            is_active: admin.is_active,
+            passwordHashLength: admin.password.length,
+            passwordHashPrefix: admin.password.substring(0, 30) + '...',
+            testPassword: testPassword,
+            testPasswordLength: testPassword.length,
+            passwordVerification: {
+                testPassword: testPassword,
+                isValid: isValid
+            },
+            message: isValid ? '✅ Password is correct!' : '❌ Password hash does not match!'
+        });
+    } catch (err) {
+        console.error('Debug error:', err);
+        res.json({ success: false, error: err.message });
+    }
+});
+
+// ========== FIX ADMIN PASSWORD ROUTE - ADDED ==========
 router.get("/api/admin/fix-password", async (req, res) => {
     if (!supabase || !dbConnected) {
         return res.json({ success: false, message: 'Database not connected' });
@@ -751,33 +616,38 @@ router.get("/api/admin/fix-password", async (req, res) => {
         const adminEmail = 'piotech52@gmail.com';
         const correctPassword = 'piotech@52gmail.com';
         
+        // Hash the password
         const saltRounds = 10;
-        const newHashedPassword = await bcrypt.hash(correctPassword, saltRounds);
+        const hashedPassword = await bcrypt.hash(correctPassword, saltRounds);
         
+        console.log('🔑 New password hash:', hashedPassword);
+        
+        // Update the password
         const { error: updateError } = await supabase
             .from('admin_users')
-            .update({ password: newHashedPassword })
+            .update({ password: hashedPassword })
             .eq('email', adminEmail);
         
         if (updateError) {
             return res.json({ success: false, error: updateError.message });
         }
         
-        const { data: admins } = await supabase
+        // Verify it worked
+        const { data: admin } = await supabase
             .from('admin_users')
             .select('password')
             .eq('email', adminEmail)
             .single();
         
-        const isValid = await bcrypt.compare(correctPassword, admins.password);
+        const isValid = await bcrypt.compare(correctPassword, admin.password);
         
         res.json({
             success: true,
-            message: '✅ Admin password has been fixed!',
-            passwordSet: correctPassword,
-            passwordLength: correctPassword.length,
-            verificationResult: isValid ? '✅ Password verified!' : '❌ Verification failed!',
-            loginInstructions: 'You can now login with:\nUsername: piotech52@gmail.com\nPassword: piotech@52gmail.com'
+            message: 'Admin password has been reset',
+            newPassword: correctPassword,
+            newHash: hashedPassword,
+            verificationResult: isValid ? '✅ Password verified! You can now login.' : '❌ Verification failed!',
+            note: 'Use password: piotech@52gmail.com (21 characters)'
         });
     } catch (err) {
         console.error('Fix password error:', err);
@@ -785,21 +655,24 @@ router.get("/api/admin/fix-password", async (req, res) => {
     }
 });
 
-// ========== STATISTICS API ==========
+// ========== STATISTICS API - USING SUPABASE ==========
 router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
     if (!supabase || !dbConnected) {
         return res.status(503).json({ success: false, message: 'Database unavailable' });
     }
     
     try {
+        // Get total users
         const { count: totalUsers } = await supabase
             .from('jambuser')
             .select('*', { count: 'exact', head: true });
         
+        // Get total payments
         const { count: totalPayments } = await supabase
             .from('user_payments')
             .select('*', { count: 'exact', head: true });
         
+        // Get total revenue
         const { data: revenueData } = await supabase
             .from('user_payments')
             .select('amount')
@@ -807,6 +680,7 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
         
         const totalRevenue = revenueData?.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0) || 0;
         
+        // Get unread notifications
         const { count: unreadNotifications } = await supabase
             .from('payment_notifications')
             .select('*', { count: 'exact', head: true })
@@ -829,208 +703,66 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
 
 // ========== DASHBOARD ==========
 router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
-    console.log('📊 Dashboard accessed by:', req.session.adminUsername);
-    
     res.send(`
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Admin Dashboard - JAMB Prep</title>
+            <title>Admin Dashboard</title>
             <style>
-                * {
-                    margin: 0;
-                    padding: 0;
-                    box-sizing: border-box;
-                    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-                }
-                body {
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    min-height: 100vh;
-                    padding: 20px;
-                }
-                .dashboard-container {
-                    max-width: 1400px;
-                    margin: 0 auto;
-                }
-                .header {
-                    background: white;
-                    border-radius: 12px;
-                    padding: 25px 30px;
-                    margin-bottom: 30px;
-                    box-shadow: 0 8px 30px rgba(0,0,0,0.08);
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                }
-                .header h1 {
-                    color: #1a237e;
-                    font-size: 28px;
-                    margin-bottom: 8px;
-                }
-                .header p {
-                    color: #6c757d;
-                    font-size: 16px;
-                }
-                .logout-btn {
-                    background: linear-gradient(135deg, #ef476f 0%, #d43f64 100%);
-                    color: white;
-                    border: none;
-                    padding: 12px 28px;
-                    border-radius: 8px;
-                    font-weight: 600;
-                    font-size: 14px;
-                    cursor: pointer;
-                    transition: all 0.3s ease;
-                }
-                .logout-btn:hover {
-                    transform: translateY(-2px);
-                    box-shadow: 0 10px 20px rgba(239,71,111,0.3);
-                }
-                .stats-grid {
-                    display: grid;
-                    grid-template-columns: repeat(4, 1fr);
-                    gap: 20px;
-                    margin-bottom: 30px;
-                }
-                .stat-card {
-                    background: white;
-                    border-radius: 12px;
-                    padding: 25px;
-                    text-align: center;
-                    box-shadow: 0 8px 30px rgba(0,0,0,0.08);
-                    transition: all 0.3s ease;
-                }
-                .stat-card:hover {
-                    transform: translateY(-5px);
-                    box-shadow: 0 15px 35px rgba(0,0,0,0.1);
-                }
-                .stat-value {
-                    font-size: 32px;
-                    font-weight: 700;
-                    color: #1a237e;
-                    margin-bottom: 5px;
-                }
-                .stat-label {
-                    color: #6c757d;
-                    font-size: 14px;
-                    font-weight: 500;
-                    text-transform: uppercase;
-                    letter-spacing: 0.5px;
-                }
-                .actions-grid {
-                    display: grid;
-                    grid-template-columns: repeat(4, 1fr);
-                    gap: 20px;
-                    margin-bottom: 30px;
-                }
-                .action-card {
-                    background: white;
-                    border-radius: 12px;
-                    padding: 30px 20px;
-                    text-align: center;
-                    cursor: pointer;
-                    transition: all 0.3s ease;
-                    text-decoration: none;
-                    color: #333;
-                    display: block;
-                    box-shadow: 0 8px 30px rgba(0,0,0,0.08);
-                }
-                .action-card:hover {
-                    background: linear-gradient(135deg, #4361ee 0%, #7209b7 100%);
-                    color: white;
-                    transform: translateY(-5px);
-                }
-                .action-icon {
-                    font-size: 48px;
-                    margin-bottom: 15px;
-                    display: block;
-                }
-                .action-title {
-                    font-size: 18px;
-                    font-weight: 600;
-                    margin-bottom: 5px;
-                }
-                .action-desc {
-                    font-size: 13px;
-                    opacity: 0.8;
-                }
-                .welcome-message {
-                    background: white;
-                    border-radius: 12px;
-                    padding: 20px;
-                    text-align: center;
-                    box-shadow: 0 8px 30px rgba(0,0,0,0.08);
-                }
-                .welcome-message p {
-                    color: #2ecc71;
-                    font-weight: 500;
-                }
-                @media (max-width: 768px) {
-                    .stats-grid, .actions-grid {
-                        grid-template-columns: repeat(2, 1fr);
-                    }
-                    .header {
-                        flex-direction: column;
-                        gap: 20px;
-                        text-align: center;
-                    }
-                }
+                body { font-family: Arial; margin: 0; padding: 20px; background: #f5f5f5; }
+                .header { background: #1a237e; color: white; padding: 20px; margin-bottom: 20px; border-radius: 5px; }
+                .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 20px; }
+                .stat-card { background: white; padding: 20px; border-radius: 5px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+                .stat-value { font-size: 32px; font-weight: bold; color: #1a237e; }
+                .actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 20px; }
+                .action-btn { background: white; padding: 20px; text-align: center; border-radius: 5px; text-decoration: none; color: #333; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; display: block; }
+                .action-btn:hover { background: #1a237e; color: white; transform: translateY(-2px); }
+                .logout-btn { background: #e74c3c; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; float: right; }
+                .logout-btn:hover { background: #c0392b; }
             </style>
         </head>
         <body>
-            <div class="dashboard-container">
-                <div class="header">
-                    <div>
-                        <h1>🎯 JAMB Prep Admin Dashboard</h1>
-                        <p>Welcome back, ${req.session.adminUsername || 'Admin'}! • ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-                    </div>
-                    <button class="logout-btn" onclick="logout()">🚪 Logout</button>
+            <div class="header">
+                <h1>🎯 JAMB Prep Admin Dashboard</h1>
+                <p>Welcome back, ${req.session.adminUsername || 'Admin'}!</p>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            </div>
+            
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalUsers">0</div>
+                    <div>Total Users</div>
                 </div>
-                
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-value" id="totalUsers">0</div>
-                        <div class="stat-label">Total Users</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="totalRevenue">₦0</div>
-                        <div class="stat-label">Total Revenue</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="totalPayments">0</div>
-                        <div class="stat-label">Total Payments</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="unreadNotifications">0</div>
-                        <div class="stat-label">Unread Notifications</div>
-                    </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="totalRevenue">₦0</div>
+                    <div>Total Revenue</div>
                 </div>
-                
-                <div class="actions-grid">
-                    <a href="/admin/users" class="action-card">
-                        <span class="action-icon">👥</span>
-                        <div class="action-title">User Management</div>
-                        <div class="action-desc">View and manage all users</div>
-                    </a>
-                    <a href="/admin/payments" class="action-card">
-                        <span class="action-icon">💰</span>
-                        <div class="action-title">Payment Management</div>
-                        <div class="action-desc">View all payment transactions</div>
-                    </a>
-                    <a href="/admin/questions" class="action-card">
-                        <span class="action-icon">📚</span>
-                        <div class="action-title">Question Management</div>
-                        <div class="action-desc">Manage JAMB questions</div>
-                    </a>
-                    <div class="action-card" onclick="sendActivation()">
-                        <span class="action-icon">🔑</span>
-                        <div class="action-title">Send Activation</div>
-                        <div class="action-desc">Send activation code to user</div>
-                    </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="totalPayments">0</div>
+                    <div>Total Payments</div>
                 </div>
-                
-                <div class="welcome-message">
-                    <p>✅ Admin session active. You have full access to all management features.</p>
+                <div class="stat-card">
+                    <div class="stat-value" id="unreadNotifications">0</div>
+                    <div>Unread Notifications</div>
+                </div>
+            </div>
+            
+            <div class="actions">
+                <a href="/admin/users" class="action-btn">
+                    <h3>👥 User Management</h3>
+                    <p>View and manage users</p>
+                </a>
+                <a href="/admin/payments" class="action-btn">
+                    <h3>💰 Payment Management</h3>
+                    <p>View all payments</p>
+                </a>
+                <a href="/admin/questions" class="action-btn">
+                    <h3>📚 Question Management</h3>
+                    <p>Manage JAMB questions</p>
+                </a>
+                <div class="action-btn" onclick="sendActivation()">
+                    <h3>🔑 Send Activation</h3>
+                    <p>Send activation code</p>
                 </div>
             </div>
             
@@ -1041,7 +773,7 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
                         const data = await response.json();
                         if (data.success) {
                             document.getElementById('totalUsers').textContent = data.statistics.totalUsers?.count || 0;
-                            document.getElementById('totalRevenue').textContent = '₦' + (data.statistics.totalRevenue?.total || 0).toLocaleString();
+                            document.getElementById('totalRevenue').textContent = '₦' + (data.statistics.totalRevenue?.total || 0);
                             document.getElementById('totalPayments').textContent = data.statistics.totalPayments?.count || 0;
                             document.getElementById('unreadNotifications').textContent = data.statistics.unreadNotifications?.count || 0;
                         }
@@ -1051,7 +783,7 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
                 }
                 
                 function sendActivation() {
-                    const email = prompt('Enter user email to send activation code:');
+                    const email = prompt('Enter user email:');
                     if (email) {
                         fetch('/send', {
                             method: 'POST',
@@ -1059,22 +791,14 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
                             body: JSON.stringify({ email })
                         })
                         .then(res => res.json())
-                        .then(data => alert(data.message || 'Activation code sent successfully!'))
+                        .then(data => alert(data.message || 'Activation code sent!'))
                         .catch(err => alert('Error sending activation code'));
                     }
                 }
                 
                 async function logout() {
-                    try {
-                        const response = await fetch('/api/auth/logout', { method: 'POST' });
-                        const data = await response.json();
-                        if (data.success) {
-                            window.location.href = '/admin/login';
-                        }
-                    } catch (error) {
-                        console.error('Logout error:', error);
-                        window.location.href = '/admin/login';
-                    }
+                    await fetch('/api/auth/logout', { method: 'POST' });
+                    window.location.href = '/admin/login';
                 }
                 
                 loadStats();
@@ -1085,7 +809,7 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
     `);
 });
 
-// ========== USER MANAGEMENT ==========
+// ========== USER MANAGEMENT - USING SUPABASE ==========
 router.get("/api/admin/users", checkAdminAuth, async (req, res) => {
     if (!supabase || !dbConnected) {
         return res.status(503).json({ success: false, message: 'Database unavailable' });
@@ -1099,6 +823,7 @@ router.get("/api/admin/users", checkAdminAuth, async (req, res) => {
         
         if (error) throw error;
         
+        // Get statistics
         const { count: totalUsers } = await supabase.from('jambuser').select('*', { count: 'exact', head: true });
         const { count: activeUsers } = await supabase.from('jambuser').select('*', { count: 'exact', head: true }).eq('is_activated', '1');
         const { count: students } = await supabase.from('jambuser').select('*', { count: 'exact', head: true }).eq('role', 'student');
@@ -1122,75 +847,48 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html>
-        <head>
-            <title>User Management</title>
-            <style>
-                body { font-family: Arial; padding: 20px; background: #f5f5f5; }
-                .nav { background: #1a237e; padding: 15px; margin-bottom: 20px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
-                .nav a { color: white; margin-right: 20px; text-decoration: none; padding: 8px 15px; border-radius: 4px; }
-                .nav a:hover, .nav a.active { background: rgba(255,255,255,0.2); }
-                .logout { background: #e74c3c; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; }
-                table { width: 100%; background: white; border-collapse: collapse; margin-top: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-                th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-                th { background: #1a237e; color: white; }
-                .status-active { color: green; font-weight: bold; }
-                .status-inactive { color: red; font-weight: bold; }
-                .btn { padding: 5px 10px; margin: 2px; border: none; border-radius: 3px; cursor: pointer; font-size: 12px; }
-                .btn-activate { background: #2ecc71; color: white; }
-                .btn-deactivate { background: #e67e22; color: white; }
-                .btn-code { background: #3498db; color: white; }
-                .stats { display: flex; gap: 20px; margin-bottom: 20px; }
-                .stat-box { background: white; padding: 15px 20px; border-radius: 5px; text-align: center; flex: 1; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-                .stat-number { font-size: 24px; font-weight: bold; color: #1a237e; }
-                .stat-label { font-size: 12px; color: #666; }
-            </style>
+        <head><title>User Management</title>
+        <style>
+            body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+            table { width: 100%; background: white; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+            th { background: #1a237e; color: white; }
+            .status-active { color: green; font-weight: bold; }
+            .status-inactive { color: red; font-weight: bold; }
+            .btn { padding: 5px 10px; margin: 2px; border: none; border-radius: 3px; cursor: pointer; }
+            .btn-activate { background: #2ecc71; color: white; }
+            .btn-deactivate { background: #e67e22; color: white; }
+            .btn-code { background: #3498db; color: white; }
+        </style>
         </head>
         <body>
-            <div class="nav">
-                <div>
-                    <a href="/admin/dashboard">Dashboard</a>
-                    <a href="/admin/users" class="active">Users</a>
-                    <a href="/admin/payments">Payments</a>
-                    <a href="/admin/questions">Questions</a>
-                </div>
-                <button class="logout" onclick="logout()">Logout</button>
-            </div>
             <h1>👥 User Management</h1>
-            <div class="stats" id="stats"></div>
             <div id="users"></div>
             <script>
                 async function loadUsers() {
                     const response = await fetch('/api/admin/users');
                     const data = await response.json();
                     if (data.success) {
-                        const statsHtml = \`
-                            <div class="stat-box"><div class="stat-number">\${data.stats.totalUsers}</div><div class="stat-label">Total Users</div></div>
-                            <div class="stat-box"><div class="stat-number">\${data.stats.activeUsers}</div><div class="stat-label">Active Users</div></div>
-                            <div class="stat-box"><div class="stat-number">\${data.stats.students}</div><div class="stat-label">Students</div></div>
-                            <div class="stat-box"><div class="stat-number">\${data.stats.paidUsers}</div><div class="stat-label">Paid Users</div></div>
-                        \`;
-                        document.getElementById('stats').innerHTML = statsHtml;
-                        
-                        let html = ' 60% <thead> <tr><th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th></tr> </thead><tbody>';
+                        let html = ' 60% <th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th>  </tr';
                         data.users.forEach(user => {
                             const isActive = user.is_activated === '1';
                             html += \`
-                                 <tr>
-                                    <td>\${user.userName || 'N/A'}</td>
-                                    <td>\${user.email}</td>
-                                    <td class="status-\${isActive ? 'active' : 'inactive'}">\${isActive ? 'Active' : 'Inactive'}</td>
-                                    <td>\${user.activationCode || 'No code'}</td>
+                                 water
+                                    <td>\${user.userName || 'N/A'} water
+                                    <td>\${user.email} water
+                                    <td class="status-\${isActive ? 'active' : 'inactive'}">\${isActive ? 'Active' : 'Inactive'} water
+                                    <td>\${user.activationCode || 'No code'} water
                                     <td>
                                         <button class="btn btn-code" onclick="sendCode('\${user.email}')">Send Code</button>
                                         \${!isActive ? 
                                             '<button class="btn btn-activate" onclick="activateUser(' + user.id + ')">Activate</button>' : 
                                             '<button class="btn btn-deactivate" onclick="deactivateUser(' + user.id + ')">Deactivate</button>'
                                         }
-                                    </td>
-                                </tr>
+                                    </div>
+                                  </tr>
                             \`;
                         });
-                        html += '</tbody></table>';
+                        html += '</table>';
                         document.getElementById('users').innerHTML = html;
                     }
                 }
@@ -1217,13 +915,7 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
                     if (data.success) loadUsers();
                 }
                 
-                async function logout() {
-                    await fetch('/api/auth/logout', { method: 'POST' });
-                    window.location.href = '/admin/login';
-                }
-                
                 loadUsers();
-                setInterval(loadUsers, 30000);
             </script>
         </body>
         </html>
@@ -1260,7 +952,7 @@ router.post("/api/admin/users/:id/deactivate", checkAdminAuth, async (req, res) 
     }
 });
 
-// ========== PAYMENT MANAGEMENT ==========
+// ========== PAYMENT MANAGEMENT - USING SUPABASE ==========
 router.get("/api/admin/payments", checkAdminAuth, async (req, res) => {
     if (!supabase || !dbConnected) return res.status(503).json({ success: false });
     try {
@@ -1271,6 +963,7 @@ router.get("/api/admin/payments", checkAdminAuth, async (req, res) => {
         
         if (error) throw error;
         
+        // Get user names
         const { data: users } = await supabase.from('jambuser').select('email, userName');
         const userMap = {};
         users?.forEach(u => { userMap[u.email] = u.userName; });
@@ -1290,32 +983,15 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html>
-        <head>
-            <title>Payment Management</title>
-            <style>
-                body { font-family: Arial; padding: 20px; background: #f5f5f5; }
-                .nav { background: #1a237e; padding: 15px; margin-bottom: 20px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
-                .nav a { color: white; margin-right: 20px; text-decoration: none; padding: 8px 15px; border-radius: 4px; }
-                .nav a:hover, .nav a.active { background: rgba(255,255,255,0.2); }
-                .logout { background: #e74c3c; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; }
-                table { width: 100%; background: white; border-collapse: collapse; margin-top: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-                th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-                th { background: #1a237e; color: white; }
-                .status-completed { color: green; font-weight: bold; }
-                .status-pending { color: orange; font-weight: bold; }
-                .status-failed { color: red; font-weight: bold; }
-            </style>
+        <head><title>Payment Management</title>
+        <style>
+            body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+            table { width: 100%; background: white; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+            th { background: #1a237e; color: white; }
+        </style>
         </head>
         <body>
-            <div class="nav">
-                <div>
-                    <a href="/admin/dashboard">Dashboard</a>
-                    <a href="/admin/users">Users</a>
-                    <a href="/admin/payments" class="active">Payments</a>
-                    <a href="/admin/questions">Questions</a>
-                </div>
-                <button class="logout" onclick="logout()">Logout</button>
-            </div>
             <h1>💰 Payment Management</h1>
             <div id="payments"></div>
             <script>
@@ -1323,29 +999,22 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
                     const response = await fetch('/api/admin/payments');
                     const data = await response.json();
                     if (data.success && data.payments) {
-                        let html = ' 60% <thead> <tr><th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th></tr> </thead><tbody>';
+                        let html = ' 60% <th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th>  </tr';
                         data.payments.forEach(p => {
-                            html += \` <tr><td>\${p.userName || p.email}</td><td>₦\${p.amount}</td><td>\${p.payment_method}</td><td class="status-\${p.status}">\${p.status}</td><td>\${new Date(p.created_at).toLocaleDateString()}</td></tr>\`;
+                            html += \`<tr><td>\${p.userName || p.email}</td><td>₦\${p.amount}</td><td>\${p.payment_method}</td><td>\${p.status}</td><td>\${new Date(p.created_at).toLocaleDateString()}</td></tr>\`;
                         });
-                        html += '</tbody></table>';
+                        html += '</table>';
                         document.getElementById('payments').innerHTML = html;
                     }
                 }
-                
-                async function logout() {
-                    await fetch('/api/auth/logout', { method: 'POST' });
-                    window.location.href = '/admin/login';
-                }
-                
                 loadPayments();
-                setInterval(loadPayments, 30000);
             </script>
         </body>
         </html>
     `);
 });
 
-// ========== ACTIVATION CODE ROUTE ==========
+// ========== ACTIVATION CODE ROUTE - USING SUPABASE ==========
 router.post("/send", async (req, res) => {
     if (!req.session || !req.session.adminLoggedIn) {
         return res.status(401).json({ success: false, message: "Unauthorized" });
@@ -1363,6 +1032,7 @@ router.post("/send", async (req, res) => {
     const activationCode = generateActivationCode();
     
     try {
+        // Check if user has made payment
         const { data: payments, error: paymentError } = await supabase
             .from('user_payments')
             .select('*')
@@ -1374,6 +1044,7 @@ router.post("/send", async (req, res) => {
             return res.status(400).json({ success: false, message: "User has not made payment" });
         }
         
+        // Check if user exists
         const { data: users, error: userError } = await supabase
             .from('jambuser')
             .select('*')
@@ -1385,6 +1056,7 @@ router.post("/send", async (req, res) => {
             return res.status(400).json({ success: false, message: "User not found" });
         }
         
+        // Update activation code
         const { error: updateError } = await supabase
             .from('jambuser')
             .update({ activationCode: activationCode })
@@ -1392,6 +1064,7 @@ router.post("/send", async (req, res) => {
         
         if (updateError) throw updateError;
         
+        // Send email
         const emailContent = `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <div style="background: linear-gradient(135deg, #1a237e 0%, #311b92 100%); padding: 30px; text-align: center;">
@@ -1428,50 +1101,13 @@ router.get("/admin/questions", checkAdminAuth, (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html>
-        <head>
-            <title>Question Management</title>
-            <style>
-                body { font-family: Arial; padding: 20px; background: #f5f5f5; }
-                .nav { background: #1a237e; padding: 15px; margin-bottom: 20px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
-                .nav a { color: white; margin-right: 20px; text-decoration: none; padding: 8px 15px; border-radius: 4px; }
-                .nav a:hover, .nav a.active { background: rgba(255,255,255,0.2); }
-                .logout { background: #e74c3c; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; }
-                .coming-soon {
-                    background: white;
-                    padding: 60px;
-                    text-align: center;
-                    border-radius: 12px;
-                    margin-top: 20px;
-                    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-                }
-                .coming-soon h2 { color: #1a237e; margin-bottom: 10px; }
-                .coming-soon p { color: #666; }
-            </style>
+        <head><title>Question Management</title>
+        <style>body{font-family:Arial;padding:20px;background:#f5f5f5;}</style>
         </head>
         <body>
-            <div class="nav">
-                <div>
-                    <a href="/admin/dashboard">Dashboard</a>
-                    <a href="/admin/users">Users</a>
-                    <a href="/admin/payments">Payments</a>
-                    <a href="/admin/questions" class="active">Questions</a>
-                </div>
-                <button class="logout" onclick="logout()">Logout</button>
-            </div>
-            <div class="coming-soon">
-                <h2>📚 Question Management</h2>
-                <p>This feature is coming soon! You'll be able to manage all JAMB questions here.</p>
-                <p style="margin-top: 10px; font-size: 12px;">✓ Add questions</p>
-                <p style="font-size: 12px;">✓ Edit questions</p>
-                <p style="font-size: 12px;">✓ Delete questions</p>
-                <p style="font-size: 12px;">✓ Organize by subject and year</p>
-            </div>
-            <script>
-                async function logout() {
-                    await fetch('/api/auth/logout', { method: 'POST' });
-                    window.location.href = '/admin/login';
-                }
-            </script>
+            <h1>📚 Question Management</h1>
+            <p>Question management features coming soon...</p>
+            <a href="/admin/dashboard">Back to Dashboard</a>
         </body>
         </html>
     `);
