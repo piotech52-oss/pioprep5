@@ -476,9 +476,13 @@ app.get('/:page.html', (req, res) => {
 });
 
 // ===============================
-// 404 HANDLER
+// 404 HANDLER - FIXED to not block admin routes
 // ===============================
 app.use((req, res) => {
+    // Don't intercept admin routes - let them be handled by the admin router
+    if (req.path.startsWith('/admin')) {
+        return res.status(404).send('Admin route not found');
+    }
     if (req.path.startsWith('/api')) {
         res.status(404).json({ success: false, message: 'API route not found' });
     } else {
