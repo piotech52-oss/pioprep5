@@ -208,12 +208,14 @@ async function createDefaultAdmin() {
 // ========== MIDDLEWARE ==========
 
 const checkAdminAuth = (req, res, next) => {
-    console.log('🔐 Auth Check:', {
+    console.log('🔐 Auth Check - Session:', {
+        exists: !!req.session,
         adminLoggedIn: req.session?.adminLoggedIn,
         adminUsername: req.session?.adminUsername
     });
     
     if (!req.session || !req.session.adminLoggedIn) {
+        console.log('⚠️ Not authenticated, redirecting to login');
         return res.redirect('/admin/login');
     }
     next();
@@ -301,12 +303,6 @@ async function sendPaymentEmailNotification(paymentData) {
 
 // ========== ADMIN LOGIN ROUTES ==========
 
-// Test route to verify admin router is working
-router.get("/admin/test", (req, res) => {
-    res.send("Admin router is working!");
-});
-
-// Admin login page
 router.get("/admin/login", (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -413,9 +409,9 @@ router.get("/admin/login", (req, res) => {
                 <h1>🔐 Admin Login</h1>
                 <div id="dbStatus" class="status">Checking database connection...</div>
                 <form id="loginForm">
-                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required value="piotech52@gmail.com">
+                    <input type="text" id="username" placeholder="Username or Email" autocomplete="username" required>
                     <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
-                    <input type="text" id="securityCode" placeholder="Security Code" required value="piotech52@gmail.com">
+                    <input type="text" id="securityCode" placeholder="Security Code" required>
                     <button type="submit">Login</button>
                 </form>
                 <div id="message"></div>
@@ -493,11 +489,11 @@ router.get("/admin/login", (req, res) => {
     `);
 });
 
-// Admin login API
 router.post("/api/auth/login", async (req, res) => {
     const { username, password, security_code } = req.body;
     
     console.log('🔐 Admin login attempt:', username);
+    console.log('   Password length:', password ? password.length : 0);
 
     if (!supabase || !dbConnected) {
         console.log('❌ Database not connected');
@@ -530,15 +526,18 @@ router.post("/api/auth/login", async (req, res) => {
         }
 
         if (!admins || admins.length === 0) {
+            console.log('   Admin user not found');
             return res.status(401).json({
                 success: false,
-                message: 'Invalid credentials'
+                message: 'Invalid credentials - User not found'
             });
         }
 
         const admin = admins[0];
+        console.log('   Found admin:', admin.email);
         
         if (admin.security_code !== security_code) {
+            console.log('   Security code mismatch');
             return res.status(401).json({
                 success: false,
                 message: 'Invalid security code'
@@ -546,6 +545,7 @@ router.post("/api/auth/login", async (req, res) => {
         }
 
         const isPasswordValid = await bcrypt.compare(password, admin.password);
+        console.log('   Password valid:', isPasswordValid);
         
         if (!isPasswordValid) {
             return res.status(401).json({
@@ -556,6 +556,7 @@ router.post("/api/auth/login", async (req, res) => {
 
         console.log('✅ Admin login successful:', username);
         
+        // Set session
         req.session.adminId = admin.id;
         req.session.adminUsername = admin.username;
         req.session.adminEmail = admin.email;
@@ -640,6 +641,9 @@ router.get("/api/admin/check-admin", async (req, res) => {
             email: admin.email,
             role: admin.role,
             is_active: admin.is_active,
+            passwordHashLength: admin.password.length,
+            testPassword: testPassword,
+            testPasswordLength: testPassword.length,
             isValid: isValid,
             message: isValid ? '✅ Password is correct!' : '❌ Password hash does not match!'
         });
@@ -670,10 +674,18 @@ router.get("/api/admin/fix-password", async (req, res) => {
             return res.json({ success: false, error: updateError.message });
         }
         
+        const { data: admins } = await supabase
+            .from('admin_users')
+            .select('password')
+            .eq('email', adminEmail)
+            .single();
+        
+        const isValid = await bcrypt.compare(correctPassword, admins.password);
+        
         res.json({
             success: true,
-            message: '✅ Admin password has been fixed!',
-            passwordSet: correctPassword,
+            message: 'Admin password has been fixed!',
+            verificationResult: isValid ? '✅ Password verified!' : '❌ Verification failed!',
             loginInstructions: 'You can now login with: piotech52@gmail.com / piotech@52gmail.com'
         });
     } catch (err) {
@@ -724,8 +736,10 @@ router.get("/api/admin/statistics", checkAdminAuth, async (req, res) => {
     }
 });
 
-// ========== DASHBOARD ==========
+// ========== DASHBOARD - WORKING ==========
 router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
+    console.log('📊 Dashboard accessed by:', req.session.adminUsername);
+    
     res.send(`
         <!DOCTYPE html>
         <html>
@@ -742,6 +756,7 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
                 .action-btn:hover { background: #1a237e; color: white; transform: translateY(-2px); }
                 .logout-btn { background: #e74c3c; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; float: right; }
                 .logout-btn:hover { background: #c0392b; }
+                .welcome-message { margin-top: 20px; padding: 15px; background: #d4edda; border-radius: 5px; text-align: center; color: #155724; }
             </style>
         </head>
         <body>
@@ -789,6 +804,10 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
                 </div>
             </div>
             
+            <div class="welcome-message">
+                <p>✅ Admin session active. You have full access to all management features.</p>
+            </div>
+            
             <script>
                 async function loadStats() {
                     try {
@@ -796,7 +815,7 @@ router.get("/admin/dashboard", checkAdminAuth, (req, res) => {
                         const data = await response.json();
                         if (data.success) {
                             document.getElementById('totalUsers').textContent = data.statistics.totalUsers?.count || 0;
-                            document.getElementById('totalRevenue').textContent = '₦' + (data.statistics.totalRevenue?.total || 0);
+                            document.getElementById('totalRevenue').textContent = '₦' + (data.statistics.totalRevenue?.total || 0).toLocaleString();
                             document.getElementById('totalPayments').textContent = data.statistics.totalPayments?.count || 0;
                             document.getElementById('unreadNotifications').textContent = data.statistics.unreadNotifications?.count || 0;
                         }
@@ -846,11 +865,16 @@ router.get("/api/admin/users", checkAdminAuth, async (req, res) => {
         
         if (error) throw error;
         
+        const { count: totalUsers } = await supabase.from('jambuser').select('*', { count: 'exact', head: true });
+        const { count: activeUsers } = await supabase.from('jambuser').select('*', { count: 'exact', head: true }).eq('is_activated', '1');
+        const { count: students } = await supabase.from('jambuser').select('*', { count: 'exact', head: true }).eq('role', 'student');
+        const { count: paidUsers } = await supabase.from('user_payments').select('*', { count: 'exact', head: true }).eq('status', 'completed');
+        
         const stats = {
-            totalUsers: (await supabase.from('jambuser').select('*', { count: 'exact', head: true })).count || 0,
-            activeUsers: (await supabase.from('jambuser').select('*', { count: 'exact', head: true }).eq('is_activated', '1')).count || 0,
-            students: (await supabase.from('jambuser').select('*', { count: 'exact', head: true }).eq('role', 'student')).count || 0,
-            paidUsers: (await supabase.from('user_payments').select('*', { count: 'exact', head: true }).eq('status', 'completed')).count || 0
+            totalUsers: totalUsers || 0,
+            activeUsers: activeUsers || 0,
+            students: students || 0,
+            paidUsers: paidUsers || 0
         };
         
         res.json({ success: true, users: users, stats: stats });
@@ -881,6 +905,9 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
                 .btn-activate { background: #2ecc71; color: white; }
                 .btn-deactivate { background: #e67e22; color: white; }
                 .btn-code { background: #3498db; color: white; }
+                .stats { display: flex; gap: 20px; margin-bottom: 20px; }
+                .stat-box { background: white; padding: 15px 20px; border-radius: 5px; text-align: center; flex: 1; }
+                .stat-number { font-size: 24px; font-weight: bold; color: #1a237e; }
             </style>
         </head>
         <body>
@@ -894,22 +921,31 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
                 <button class="logout" onclick="logout()">Logout</button>
             </div>
             <h1>👥 User Management</h1>
+            <div class="stats" id="stats"></div>
             <div id="users"></div>
             <script>
                 async function loadUsers() {
                     const response = await fetch('/api/admin/users');
                     const data = await response.json();
                     if (data.success) {
-                        let html = ' 60% <th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th>  </tr';
+                        const statsHtml = \`
+                            <div class="stat-box"><div class="stat-number">\${data.stats.totalUsers}</div><div>Total Users</div></div>
+                            <div class="stat-box"><div class="stat-number">\${data.stats.activeUsers}</div><div>Active Users</div></div>
+                            <div class="stat-box"><div class="stat-number">\${data.stats.students}</div><div>Students</div></div>
+                            <div class="stat-box"><div class="stat-number">\${data.stats.paidUsers}</div><div>Paid Users</div></div>
+                        \`;
+                        document.getElementById('stats').innerHTML = statsHtml;
+                        
+                        let html = ' 60% <thead>  <th>Name</th><th>Email</th><th>Status</th><th>Code</th><th>Actions</th> </tr </thead><tbody>';
                         data.users.forEach(user => {
                             const isActive = user.is_activated === '1';
                             html += \`
-                                 water
-                                    <td>\${user.userName || 'N/A'} </td
-                                    <td>\${user.email} </td
+                                  water
+                                     <td>\${user.userName || 'N/A'} </td
+                                     <td>\${user.email} </td
                                     <td class="status-\${isActive ? 'active' : 'inactive'}">\${isActive ? 'Active' : 'Inactive'} </td
-                                    <td>\${user.activationCode || 'No code'} </td
-                                    <td>
+                                     <td>\${user.activationCode || 'No code'} </td
+                                     <td>
                                         <button class="btn btn-code" onclick="sendCode('\${user.email}')">Send Code</button>
                                         \${!isActive ? 
                                             '<button class="btn btn-activate" onclick="activateUser(' + user.id + ')">Activate</button>' : 
@@ -919,7 +955,7 @@ router.get("/admin/users", checkAdminAuth, (req, res) => {
                                    </tr
                             \`;
                         });
-                        html += ' </table';
+                        html += '</tbody> </table';
                         document.getElementById('users').innerHTML = html;
                     }
                 }
@@ -1051,11 +1087,11 @@ router.get("/admin/payments", checkAdminAuth, (req, res) => {
                     const response = await fetch('/api/admin/payments');
                     const data = await response.json();
                     if (data.success && data.payments) {
-                        let html = ' 60% <th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th>  </tr';
+                        let html = ' 60% <thead> <th>User</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th> </tr </thead><tbody>';
                         data.payments.forEach(p => {
-                            html += \`  </td<td>\${p.userName || p.email}  </td<td>₦\${p.amount}  </td<td>\${p.payment_method}  </td<td class="status-\${p.status}">\${p.status}  </td<td>\${new Date(p.created_at).toLocaleDateString()}  </td</tr\`;
+                            html += \` <td>\${p.userName || p.email} </td <td>₦\${p.amount} </td <td>\${p.payment_method} </td <td class="status-\${p.status}">\${p.status} </td <td>\${new Date(p.created_at).toLocaleDateString()} </td </tr\`;
                         });
-                        html += ' </table';
+                        html += '</tbody> </table';
                         document.getElementById('payments').innerHTML = html;
                     }
                 }
@@ -1163,6 +1199,8 @@ router.get("/admin/questions", checkAdminAuth, (req, res) => {
                 .nav a { color: white; margin-right: 20px; text-decoration: none; padding: 8px 15px; border-radius: 4px; }
                 .nav a:hover { background: rgba(255,255,255,0.1); }
                 .logout { background: #e74c3c; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; }
+                .coming-soon { background: white; padding: 60px; text-align: center; border-radius: 12px; margin-top: 20px; }
+                .coming-soon h2 { color: #1a237e; }
             </style>
         </head>
         <body>
@@ -1175,8 +1213,10 @@ router.get("/admin/questions", checkAdminAuth, (req, res) => {
                 </div>
                 <button class="logout" onclick="logout()">Logout</button>
             </div>
-            <h1>📚 Question Management</h1>
-            <p>Question management features coming soon...</p>
+            <div class="coming-soon">
+                <h2>📚 Question Management</h2>
+                <p>This feature is coming soon!</p>
+            </div>
             <script>
                 async function logout() {
                     await fetch('/api/auth/logout', { method: 'POST' });
