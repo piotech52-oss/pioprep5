@@ -1,40 +1,186 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Home Page - Activated User</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home Page - Activated User | PIO Prep</title>
     <style>
-        body { font-family: Arial; text-align: center; padding: 50px; background: #e8f5e9; }
-        .container { max-width: 600px; margin: auto; background: white; padding: 30px; border-radius: 10px; }
-        h1 { color: #2e7d32; }
-        button { background: #dc2626; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 50px auto;
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+        
+        h1 {
+            color: #2e7d32;
+            margin-bottom: 20px;
+            font-size: 2.5rem;
+        }
+        
+        .success-icon {
+            font-size: 80px;
+            color: #2e7d32;
+            margin-bottom: 20px;
+        }
+        
+        p {
+            color: #555;
+            font-size: 1.1rem;
+            margin-bottom: 15px;
+            line-height: 1.6;
+        }
+        
+        .user-card {
+            background: #f0fdf4;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #2e7d32;
+            text-align: left;
+        }
+        
+        .user-card p {
+            margin-bottom: 8px;
+        }
+        
+        .user-card strong {
+            color: #2e7d32;
+        }
+        
+        button {
+            background: #dc2626;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            margin: 10px 5px;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            background: #b91c1c;
+            transform: translateY(-2px);
+        }
+        
+        .btn-secondary {
+            background: #4a5568;
+        }
+        
+        .btn-secondary:hover {
+            background: #2d3748;
+        }
+        
+        a {
+            display: inline-block;
+            color: #667eea;
+            text-decoration: none;
+            margin-top: 20px;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        .loading {
+            color: #888;
+            font-style: italic;
+        }
+        
+        .badge {
+            display: inline-block;
+            background: #2e7d32;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>✅ Welcome Activated User!</h1>
-        <p>You have successfully logged in with is_activated = 1</p>
-        <p id="userInfo">Loading user info...</p>
-        <button onclick="logout()">Logout</button>
-        <br><br>
-        <a href="/">Go to Login Page</a>
+        <div class="success-icon">✅</div>
+        <h1>Welcome Activated User!</h1>
+        <p>You have successfully logged in with <strong>is_activated = 1</strong></p>
+        <div class="badge">Verified Account</div>
+        
+        <div class="user-card" id="userInfo">
+            <p><strong>📧 Loading user info...</strong></p>
+        </div>
+        
+        <div>
+            <button onclick="logout()">🚪 Logout</button>
+            <button class="btn-secondary" onclick="goToExam()">📚 Start Exam</button>
+        </div>
+        
+        <br>
+        <a href="/">← Back to Login Page</a>
     </div>
 
     <script>
         async function logout() {
-            await fetch('/api/logout', { method: 'POST', credentials: 'include' });
-            window.location.href = '/';
-        }
-
-        async function checkSession() {
-            const res = await fetch('/api/session', { credentials: 'include' });
-            const data = await res.json();
-            if (data.loggedIn) {
-                document.getElementById('userInfo').innerHTML = `Welcome, ${data.user.userName}!<br>Email: ${data.user.email}<br>Activated: ${data.user.is_activated}`;
-            } else {
+            try {
+                const response = await fetch('/api/logout', { 
+                    method: 'POST', 
+                    credentials: 'include' 
+                });
+                if (response.ok) {
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.error('Logout error:', error);
                 window.location.href = '/';
             }
         }
-
+        
+        function goToExam() {
+            window.location.href = '/setupSection';
+        }
+        
+        async function checkSession() {
+            try {
+                const res = await fetch('/api/session', { 
+                    credentials: 'include' 
+                });
+                const data = await res.json();
+                
+                if (data.loggedIn) {
+                    document.getElementById('userInfo').innerHTML = `
+                        <p><strong>👤 Name:</strong> ${data.user.userName || 'Student'}</p>
+                        <p><strong>📧 Email:</strong> ${data.user.email}</p>
+                        <p><strong>✅ Status:</strong> Activated User</p>
+                        <p><strong>🆔 User ID:</strong> ${data.user.id}</p>
+                    `;
+                } else {
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.error('Session check error:', error);
+                window.location.href = '/';
+            }
+        }
+        
+        // Run on page load
         checkSession();
     </script>
 </body>
